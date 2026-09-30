@@ -2,7 +2,7 @@
 
 Type: task
 Label: wayfinder:task
-Status: open
+Status: claimed
 Map: [Multi-Pixel map](../map.md)
 
 ## Question
@@ -16,3 +16,8 @@ Several decisions wait on real data rather than docs. Set up a Shopify dev store
 - whether events sent from the sandbox with `fetch` to `https://www.facebook.com/tr` (with `eid`, `dl`, `ts`, `fbp`, `fbc` and `cd[content_ids]`) show up correctly in Meta Test Events for two different test pixels, and how Events Manager rates their match quality.
 
 HITL: needs the human's Shopify Partner account. Record the store URL, where the payload logs are, and the facts above.
+
+## Assets
+
+- Probe app and checklist: [probe-app/README.md](../probe-app/README.md) (throwaway: a strict Web Pixel that logs payloads and sends to `/tr`, and a theme app embed that exposes `localization.market.id`).
+- Captured logs go in `../probe-logs/`.
