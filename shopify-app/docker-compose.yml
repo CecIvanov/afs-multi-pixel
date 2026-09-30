@@ -1,0 +1,14 @@
+services:
+  app:
+    build: .
+    ports:
+      - "3000:3000"
+    env_file: .env.docker
+    environment:
+      DATABASE_URL: file:/data/multi-pixel.sqlite
+    volumes:
+      - data:/data
+    restart: unless-stopped
+
+volumes:
+  data:

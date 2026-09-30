@@ -2,7 +2,7 @@
 
 Type: task
 Label: wayfinder:task
-Status: claimed
+Status: resolved
 Map: [Multi-Pixel map](../map.md)
 
 ## Question
@@ -21,3 +21,7 @@ HITL: needs the human's Shopify Partner account. Record the store URL, where the
 
 - Probe app and checklist: [probe-app/README.md](../probe-app/README.md) (throwaway: a strict Web Pixel that logs payloads and sends to `/tr`, and a theme app embed that exposes `localization.market.id`).
 - Captured logs go in `../probe-logs/`.
+
+## Answer
+
+Closed as superseded (out of scope). The user wants the real POC app built and verified on `gpay3y-2v.myshopify.com` rather than a throwaway probe. The probe app was deleted, and verification moved to the map's "POC verification" item.

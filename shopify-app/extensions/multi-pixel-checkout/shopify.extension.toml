@@ -1,0 +1,17 @@
+type = "web_pixel_extension"
+name = "multi-pixel-checkout"
+runtime_context = "strict"
+
+[customer_privacy]
+analytics = false
+marketing = true
+preferences = false
+sale_of_data = "enabled"
+
+[settings]
+type = "object"
+
+[settings.fields.mapping]
+name = "Pixel Mapping"
+description = "JSON object of numeric Shopify market id to Meta pixel id. Written by the app."
+type = "single_line_text_field"

@@ -1,0 +1,42 @@
+{%- comment -%}
+  Resolves the shopper's Market in Liquid, looks up its Market Pixel in the app's Pixel Mapping
+  (app-owned metafield, written by the app admin) and hands both to multi-pixel.js.
+  The market id is also stored in a first-party cookie so the app's Web Pixel can route
+  AddToCart to the same Market Pixel.
+{%- endcomment -%}
+{%- liquid
+  assign mapping = app.metafields.multi_pixel.mapping.value
+  assign market_id = localization.market.id | append: ''
+  assign pixel_id = mapping[market_id]
+
+  assign variant = product.selected_or_first_available_variant
+-%}
+<script id="multi-pixel-config" type="application/json">
+  {
+    "marketId": {{ market_id | json }},
+    "marketHandle": {{ localization.market.handle | json }},
+    "pixelId": {{ pixel_id | json }},
+    "currency": {{ cart.currency.iso_code | json }},
+    "template": {{ template.name | json }},
+    {%- if template.name == 'product' and product -%}
+    "product": {
+      "id": {{ product.id | json }},
+      "name": {{ product.title | json }},
+      "variantId": {{ variant.id | json }},
+      "price": {{ variant.price | divided_by: 100.0 | json }}
+    },
+    {%- else -%}
+    "product": null,
+    {%- endif -%}
+    "searchTerms": {% if template.name == 'search' %}{{ search.terms | json }}{% else %}null{% endif %}
+  }
+</script>
+<script src="{{ 'multi-pixel.js' | asset_url }}" defer></script>
+
+{% schema %}
+{
+  "name": "Multi-Pixel",
+  "target": "head",
+  "settings": []
+}
+{% endschema %}
