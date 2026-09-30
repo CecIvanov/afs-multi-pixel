@@ -46,6 +46,7 @@ register(({ analytics, browser, settings }) => {
     data: Record<string, string | number | undefined>,
   ) => {
     const pixelId = marketId ? mapping[marketId] : undefined;
+    console.info(`[multi-pixel] ${metaEvent} market ${marketId ?? "none"} -> pixel ${pixelId ?? "none (not sent)"}`);
     if (!pixelId) return;
 
     const { fbp, fbc } = await metaCookies();
@@ -79,12 +80,23 @@ register(({ analytics, browser, settings }) => {
     }
   };
 
+  // Log instead of silently dropping the event when a handler throws.
+  const safe =
+    <E,>(name: string, handler: (event: E) => Promise<void>) =>
+    async (event: E) => {
+      try {
+        await handler(event);
+      } catch (error) {
+        console.warn(`[multi-pixel] ${name} failed`, error);
+      }
+    };
+
   const money = (value: MoneyV2 | null | undefined) => ({
     value: value?.amount,
     currency: value?.currencyCode,
   });
 
-  analytics.subscribe("product_added_to_cart", async (event) => {
+  analytics.subscribe("product_added_to_cart", safe("product_added_to_cart", async (event) => {
     const line = event.data.cartLine;
     if (!line) return;
     const marketId = numericId(await browser.cookie.get(MARKET_COOKIE));
@@ -95,12 +107,12 @@ register(({ analytics, browser, settings }) => {
       num_items: line.quantity,
       ...money(line.cost.totalAmount),
     });
-  });
+  }));
 
   const checkoutData = (checkout: Checkout) => ({
     content_ids: JSON.stringify(
       (checkout.lineItems ?? [])
-        .map((item) => numericId(item.variant?.product.id))
+        .map((item) => numericId(item.variant?.product?.id))
         .filter(Boolean),
     ),
     content_type: "product_group",
@@ -110,21 +122,21 @@ register(({ analytics, browser, settings }) => {
 
   const checkoutMarket = (checkout: Checkout) => numericId(checkout.localization?.market?.id);
 
-  analytics.subscribe("checkout_started", async (event) => {
+  analytics.subscribe("checkout_started", safe("checkout_started", async (event) => {
     const { checkout } = event.data;
     await send(event, checkoutMarket(checkout), "InitiateCheckout", checkoutData(checkout));
-  });
+  }));
 
-  analytics.subscribe("payment_info_submitted", async (event) => {
+  analytics.subscribe("payment_info_submitted", safe("payment_info_submitted", async (event) => {
     const { checkout } = event.data;
     await send(event, checkoutMarket(checkout), "AddPaymentInfo", checkoutData(checkout));
-  });
+  }));
 
-  analytics.subscribe("checkout_completed", async (event) => {
+  analytics.subscribe("checkout_completed", safe("checkout_completed", async (event) => {
     const { checkout } = event.data;
     await send(event, checkoutMarket(checkout), "Purchase", {
       ...checkoutData(checkout),
       order_id: checkout.order?.id ?? undefined,
     });
-  });
+  }));
 });
