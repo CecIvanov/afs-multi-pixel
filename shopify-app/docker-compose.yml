@@ -1,5 +1,5 @@
 # The VPS's existing Caddy terminates HTTPS for multi-pixel-test-app.adfeedstudio.com and
-# proxies to this container on 127.0.0.1:${APP_PORT:-3000} (see POC.md for the Caddyfile block).
+# proxies to this container on 127.0.0.1:${APP_PORT:-33533} (see POC.md for the Caddyfile block).
 services:
   app:
     build: .
@@ -8,7 +8,7 @@ services:
       DATABASE_URL: file:/data/multi-pixel.sqlite
       PORT: "3000"
     ports:
-      - "127.0.0.1:${APP_PORT:-3000}:3000"
+      - "127.0.0.1:${APP_PORT:-33533}:3000"
     volumes:
       - data:/data
     restart: unless-stopped

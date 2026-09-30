@@ -21,15 +21,14 @@ Events go out only after the shopper allows marketing (Shopify Customer Privacy 
 - URL: `https://multi-pixel-test-app.adfeedstudio.com`
 - Admin API version: `2026-10`
 
-> **Custom distribution can't be undone for an app.** If AFS Multi Pixel is meant to become the public App Store app, use a separate app for the POC.
 
 ### 1. VPS (backend)
 
-The VPS's existing Caddy terminates HTTPS and proxies to the container, which listens only on `127.0.0.1:3000` (change it with `APP_PORT`).
+The VPS's existing Caddy terminates HTTPS and proxies to the container, which listens only on `127.0.0.1:33533` on the host (change it with `APP_PORT`; inside the container the app still uses 3000).
 
 ```sh
 # on the VPS, in a copy of shopify-app/
-cp .env.docker.example .env.docker   # fill SHOPIFY_API_KEY / SHOPIFY_API_SECRET (Dev Dashboard → Settings → Credentials)
+cp .env.docker.example .env.docker   # then set SHOPIFY_API_SECRET in .env.docker (not in git)
 docker compose up -d --build
 ```
 
@@ -37,7 +36,7 @@ Add to the Caddyfile, then reload Caddy:
 
 ```caddy
 multi-pixel-test-app.adfeedstudio.com {
-	reverse_proxy 127.0.0.1:3000
+	reverse_proxy 127.0.0.1:33533
 }
 ```
 
