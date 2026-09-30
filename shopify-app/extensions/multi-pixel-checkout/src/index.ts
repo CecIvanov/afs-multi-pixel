@@ -69,6 +69,9 @@ register(({ analytics, browser, settings }) => {
       await fetch(`https://www.facebook.com/tr/?${params}`, {
         method: "GET",
         mode: "no-cors",
+        // Send the shopper's facebook.com cookies, like fbevents.js's image requests do: Meta uses
+        // them to match the event to a person and to show it in Events Manager → Test Events.
+        credentials: "include",
         keepalive: true,
       });
     } catch (error) {
