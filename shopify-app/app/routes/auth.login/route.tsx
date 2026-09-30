@@ -9,7 +9,8 @@ import { loginErrorMessage } from "./error.server";
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const errors = loginErrorMessage(await login(request));
 
-  return { errors };
+  // eslint-disable-next-line no-undef
+  return { errors, apiKey: process.env.SHOPIFY_API_KEY || "" };
 };
 
 export const action = async ({ request }: ActionFunctionArgs) => {
@@ -17,6 +18,8 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
   return {
     errors,
+    // eslint-disable-next-line no-undef
+    apiKey: process.env.SHOPIFY_API_KEY || "",
   };
 };
 
@@ -24,10 +27,10 @@ export default function Auth() {
   const loaderData = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const [shop, setShop] = useState("");
-  const { errors } = actionData || loaderData;
+  const { errors, apiKey } = actionData || loaderData;
 
   return (
-    <AppProvider embedded={false}>
+    <AppProvider apiKey={apiKey}>
       <s-page>
         <Form method="post">
         <s-section heading="Log in">

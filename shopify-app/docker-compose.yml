@@ -1,3 +1,5 @@
+# The VPS's existing Caddy terminates HTTPS for multi-pixel-test-app.adfeedstudio.com and
+# proxies to this container on 127.0.0.1:${APP_PORT:-3000} (see POC.md for the Caddyfile block).
 services:
   app:
     build: .
@@ -5,23 +7,11 @@ services:
     environment:
       DATABASE_URL: file:/data/multi-pixel.sqlite
       PORT: "3000"
+    ports:
+      - "127.0.0.1:${APP_PORT:-3000}:3000"
     volumes:
       - data:/data
     restart: unless-stopped
 
-  # Terminates HTTPS for APP_DOMAIN with an automatic Let's Encrypt certificate.
-  caddy:
-    image: caddy:2-alpine
-    command: caddy reverse-proxy --from ${APP_DOMAIN:?set APP_DOMAIN in .env} --to app:3000
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - caddy_data:/data
-    depends_on:
-      - app
-    restart: unless-stopped
-
 volumes:
   data:
-  caddy_data:
