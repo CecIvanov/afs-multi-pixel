@@ -1,16 +1,34 @@
 # Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
 
 client_id = "48c50a3bda2b87c3891348c4bb58da79"
-application_url = "https://shopify.dev/apps/default-app-home"
-embedded = true
 name = "AFS Multi Pixel"
-
-[webhooks]
-api_version = "2026-10"
+# Replace multi-pixel.example.com with the VPS domain (here and in redirect_urls), then `shopify app deploy`.
+application_url = "https://multi-pixel.example.com"
+embedded = true
 
 [access_scopes]
 # Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
-scopes = ""
+scopes = "read_markets,write_pixels,read_customer_events"
 
 [auth]
-redirect_urls = [ "https://shopify.dev/apps/default-app-home/api/auth" ]
+redirect_urls = [
+  "https://multi-pixel.example.com/auth/callback",
+  "https://multi-pixel.example.com/auth/shopify/callback",
+  "https://multi-pixel.example.com/api/auth/callback"
+]
+
+[build]
+include_config_on_deploy = true
+
+[webhooks]
+api_version = "2025-10"
+
+  # Handled by: /app/routes/webhooks.app.uninstalled.tsx
+  [[webhooks.subscriptions]]
+  uri = "/webhooks/app/uninstalled"
+  topics = ["app/uninstalled"]
+
+  # Handled by: /app/routes/webhooks.app.scopes_update.tsx
+  [[webhooks.subscriptions]]
+  topics = [ "app/scopes_update" ]
+  uri = "/webhooks/app/scopes_update"
