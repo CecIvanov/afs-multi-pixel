@@ -37,7 +37,7 @@ A **working POC app** installed on the dev store `gpay3y-2v.myshopify.com` (BG a
 - **Admin UX for the Pixel Mapping**: how the merchant sees their Markets and assigns pixels, and what happens when Markets are added, renamed or deleted in Shopify after mapping.
 - **Pixel lifecycle**: removal and cleanup on uninstall, and re-syncing when Markets are added or deleted in Shopify. (Activation and sync on save are built.)
 - **Event shape per Standard Funnel event**: which parameters each event sends to Meta (value, currency, content_type, contents, event_id for future CAPI dedup) and how they're built from Shopify's event payloads.
-- **POC verification**: run the app on `gpay3y-2v` and confirm in Meta Test Events that BG and GR shoppers land in their own pixels, Purchase included. Also check match quality for the `/tr` events.
+- **POC verification**: partly done on 2026-09-30 with an automated browser on `gpay3y-2v`. PageView, ViewContent, AddToCart and InitiateCheckout reach the pixel of the Market Shopify resolved, with the right product, value and currency. Still open: **Purchase** (needs a test order), a GR run from a Greek IP (Shopify geo-redirects Bulgarian visitors to the BG Market), and match quality in Events Manager. Facts found: nothing fires until marketing consent is given (by design); Meta's pixel drops events from headless or bot user agents; `test-subdomain1` = greece and `test-subdomain2` = bg.
 - **App Store constraints**: review requirements that affect a pixel app (privacy declarations, GDPR webhooks, performance rules) and that the POC must not paint us out of. This includes whether to request protected customer data approval so advanced matching (hashed email and phone) can raise match quality.
 
 ## Out of scope
