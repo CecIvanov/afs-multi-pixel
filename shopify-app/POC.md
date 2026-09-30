@@ -13,27 +13,51 @@ A Shopify app that sends Meta pixel events to a separate pixel per Shopify Marke
 
 Events go out only after the shopper allows marketing (Shopify Customer Privacy API). A Market with no pixel sends nothing. `content_ids` are Shopify **product** ids with `content_type: product_group`.
 
-## Run it on the dev store (fastest)
+## Install it on gpay3y-2v
 
-The app must live in the **Dev Dashboard / Partner Dashboard**. An app created in the store admin under "Develop apps" can't have extensions.
+`gpay3y-2v` is a real store, not a development store, so `shopify app dev` can't target it. The backend runs on the VPS, `shopify app deploy` releases the config and extensions, and the app is installed through a custom distribution link.
+
+- App: **AFS Multi Pixel** (already linked in `shopify.app.toml`; don't re-run `shopify app config link`, because it overwrites the file with the app's remote settings).
+- URL: `https://multi-pixel-test-app.adfeedstudio.com`
+- Admin API version: `2026-10`
+
+> **Custom distribution can't be undone for an app.** If AFS Multi Pixel is meant to become the public App Store app, use a separate app for the POC.
+
+### 1. VPS (backend)
+
+The VPS's existing Caddy terminates HTTPS and proxies to the container, which listens only on `127.0.0.1:3000` (change it with `APP_PORT`).
+
+```sh
+# on the VPS, in a copy of shopify-app/
+cp .env.docker.example .env.docker   # fill SHOPIFY_API_KEY / SHOPIFY_API_SECRET (Dev Dashboard → Settings → Credentials)
+docker compose up -d --build
+```
+
+Add to the Caddyfile, then reload Caddy:
+
+```caddy
+multi-pixel-test-app.adfeedstudio.com {
+	reverse_proxy 127.0.0.1:3000
+}
+```
+
+If Caddy itself runs in Docker, `127.0.0.1` is the Caddy container, not the host. In that case, put both on a shared Docker network and use `reverse_proxy <app-container-name>:3000`.
+
+SQLite lives in the `data` volume (`/data/multi-pixel.sqlite`). Migrations run on start.
+
+### 2. Release config and extensions (from your machine)
 
 ```sh
 cd shopify-app
 npm install
-shopify app config link   # connect to the POC app (or create one); fills client_id
-shopify app dev           # choose gpay3y-2v; opens a tunnel, pushes scopes/URLs/extensions, installs
+shopify app deploy        # releases URLs, scopes, webhooks and both extensions
 ```
 
-1. In the store admin, open the app. Each Market gets a field: enter a Meta pixel ID for BG and for GR, then click **Save**.
-2. **Online Store → Themes → Customize → App embeds**: switch on **Multi-Pixel**, then save.
-3. Test in an incognito window on `test-subdomain1.adfeedstudio.com` (BG) and `test-subdomain2.adfeedstudio.com` (GR). Accept the cookie banner. The console shows `[multi-pixel] market <id> <handle> -> pixel <id>`. In Meta Events Manager → Test Events, each pixel should get only its own Market's events, including Purchase after a test order.
+### 3. Install and configure
 
-## Run it in Docker
+1. Dev Dashboard → AFS Multi Pixel → **Distribution** → **Custom distribution** → enter `gpay3y-2v.myshopify.com` → open the install link as the store owner and approve.
+2. In the store admin, open the app. Enter a Meta pixel ID for BG and for GR, then click **Save**.
+3. **Online Store → Themes → Customize → App embeds**: switch on **Multi-Pixel**, then save.
+4. Test in an incognito window on `test-subdomain1.adfeedstudio.com` (BG) and `test-subdomain2.adfeedstudio.com` (GR). Accept the cookie banner. The console shows `[multi-pixel] market <id> <handle> -> pixel <id>`. In Meta Events Manager → Test Events, each pixel should get only its own Market's events, including Purchase after a test order.
 
-```sh
-cp .env.docker.example .env.docker   # fill in API key/secret and the public URL
-docker compose up -d --build
-```
-
-- Set `application_url` and `redirect_urls` in `shopify.app.toml` to the public URL, then run `shopify app deploy`. That pushes the config and both extensions; the container only serves the backend.
-- SQLite lives in the `data` volume (`/data/multi-pixel.sqlite`). Migrations run on start.
+Updating: `docker compose up -d --build` on the VPS for backend changes; `shopify app deploy` for extension or config changes.
