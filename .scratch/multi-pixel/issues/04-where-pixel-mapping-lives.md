@@ -3,7 +3,7 @@
 Type: grilling
 Label: wayfinder:grilling
 Status: open
-Blocked by: 01, 02
+Blocked by: 01, 02, 07
 Map: [Multi-Pixel map](../map.md)
 
 ## Question

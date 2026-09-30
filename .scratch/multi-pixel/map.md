@@ -25,13 +25,17 @@ An implementation-ready **POC spec** for a public Shopify app that sends the Sta
 
 <!-- one line per closed ticket: [title](issues/NN-slug.md): gist -->
 
+- [Can a Web Pixel app extension detect the shopper's Market on every Standard Funnel event?](issues/01-market-detection-in-web-pixel.md): checkout events (including Purchase on the Thank you page) carry `checkout.localization.market.id`. Storefront events carry no Market, so they need another signal, such as a theme app embed.
+- [What are the documented ways to fire a Purchase from the thank-you page?](issues/03-thank-you-page-fallback.md): script injection there is gone for every plan. The Web Pixel's `checkout_completed` is the Purchase route, and thank-you extensions could only reach Meta through our backend (the out-of-scope CAPI), so no fallback is needed.
+- [Can Meta's pixel run inside the Web Pixel sandbox and address several pixels?](issues/02-meta-pixel-in-web-pixel-sandbox.md): `fbq` can't run in the strict sandbox. Send each event with `fetch` to Meta's `/tr` endpoint, which names one pixel per request, reusing or creating the shop's `_fbp` / `_fbc` cookies.
+
 ## Not yet specified
 
 - **Admin UX for the Pixel Mapping**: how the merchant sees their Markets and assigns pixels, and what happens when Markets are added, renamed or deleted in Shopify after mapping.
 - **Pixel lifecycle**: how the app's pixel is activated on install, kept in sync when the mapping changes, and removed on uninstall. The shape depends on where the mapping lives.
 - **Event shape per Standard Funnel event**: which parameters each event sends to Meta (value, currency, content_type, contents, event_id for future CAPI dedup) and how they're built from Shopify's event payloads.
 - **POC verification**: how we prove end-to-end that a shopper in RO lands in the RO pixel and one in BG in the BG pixel, including Purchase (test store, Markets setup, Meta Test Events).
-- **App Store constraints**: review requirements that affect a pixel app (privacy declarations, GDPR webhooks, performance rules) and that the POC must not paint us out of.
+- **App Store constraints**: review requirements that affect a pixel app (privacy declarations, GDPR webhooks, performance rules) and that the POC must not paint us out of. This includes whether to request protected customer data approval so advanced matching (hashed email and phone) can raise match quality.
 
 ## Out of scope
 
