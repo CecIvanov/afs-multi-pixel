@@ -1,14 +1,27 @@
 services:
   app:
     build: .
-    ports:
-      - "3000:3000"
     env_file: .env.docker
     environment:
       DATABASE_URL: file:/data/multi-pixel.sqlite
+      PORT: "3000"
     volumes:
       - data:/data
     restart: unless-stopped
 
+  # Terminates HTTPS for APP_DOMAIN with an automatic Let's Encrypt certificate.
+  caddy:
+    image: caddy:2-alpine
+    command: caddy reverse-proxy --from ${APP_DOMAIN:?set APP_DOMAIN in .env} --to app:3000
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - caddy_data:/data
+    depends_on:
+      - app
+    restart: unless-stopped
+
 volumes:
   data:
+  caddy_data:
