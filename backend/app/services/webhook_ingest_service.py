@@ -7,6 +7,7 @@ fast. Lifecycle/compliance topics return 2xx even when the tenant is gone.
 
 from __future__ import annotations
 
+import hashlib
 import uuid
 from dataclasses import dataclass
 from typing import Any
@@ -27,6 +28,11 @@ TOPIC_TO_OPERATION: dict[str, AsyncJobOperation] = {
     "shop/redact": AsyncJobOperation.SHOP_REDACT,
     "customers/data_request": AsyncJobOperation.CUSTOMER_DATA_REQUEST,
     "customers/redact": AsyncJobOperation.CUSTOMER_REDACT,
+    "orders/create": AsyncJobOperation.ORDERS_CREATE,
+    # One re-fetch covers any Market change, so the three coalesce into one job.
+    "markets/create": AsyncJobOperation.MARKETS_SYNC,
+    "markets/update": AsyncJobOperation.MARKETS_SYNC,
+    "markets/delete": AsyncJobOperation.MARKETS_SYNC,
 }
 
 # These must return 2xx to Shopify even when the shop row is unknown (already
@@ -44,8 +50,11 @@ INACTIVE_TENANT_ALLOWED_OPERATIONS = IDEMPOTENT_MISSING_TENANT_OPERATIONS
 
 
 def normalize_webhook_topic(topic: str) -> str:
-    raw = topic.strip()
-    return raw.lower() if "/" in raw else raw.lower().replace("_", "/")
+    """"app/scopes_update" stays as is; the storage form "APP_SCOPES_UPDATE" that
+    authenticate.webhook returns becomes "app/scopes_update" — only the first
+    underscore is the resource separator."""
+    raw = topic.strip().lower()
+    return raw if "/" in raw else raw.replace("_", "/", 1)
 
 
 @dataclass(frozen=True)
@@ -57,10 +66,17 @@ class WebhookIngestResult:
 
 
 def _dedupe_key(operation: AsyncJobOperation, payload: dict[str, Any] | None) -> str:
-    if operation in (AsyncJobOperation.CUSTOMER_DATA_REQUEST, AsyncJobOperation.CUSTOMER_REDACT):
-        customer = (payload or {}).get("customer") or {}
-        cid = customer.get("id") or (payload or {}).get("customer_email") or "unknown"
-        return f"{operation.value}:{cid}"
+    payload = payload or {}
+    customer_id = (payload.get("customer") or {}).get("id") or payload.get("customer_email") or "unknown"
+    if operation == AsyncJobOperation.CUSTOMER_REDACT:
+        # Two redacts for one customer may list different orders; coalescing them
+        # would drop the first one's orders, so the orders are part of the key.
+        orders = ",".join(sorted(str(o) for o in payload.get("orders_to_redact") or []))
+        return f"{operation.value}:{customer_id}:{hashlib.sha256(orders.encode()).hexdigest()[:16]}"
+    if operation == AsyncJobOperation.CUSTOMER_DATA_REQUEST:
+        return f"{operation.value}:{customer_id}"
+    if operation == AsyncJobOperation.ORDERS_CREATE:
+        return f"{operation.value}:{payload.get('id', 'unknown')}"
     return operation.value
 
 

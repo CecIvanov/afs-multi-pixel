@@ -71,8 +71,10 @@ per-app changes; you only interact with it if you add Admin-API background jobs:
 
 ## 4. Webhooks — topics + handlers
 
-- Declare topics in `shopify/shopify.app.toml`; add a `webhooks.<topic>.tsx`
-  route that calls `ingestShopifyWebhook`.
+- Declare topics in all three env tomls (a guard test fails on drift or a missing
+  route); add a `webhooks.<topic>.tsx` route whose action is `webhookAction`
+  (`shopify/app/webhooks.server.ts`) — it verifies the HMAC, stores the webhook
+  and answers 200. Routes do no other work.
 - Map the topic to an operation in `backend/app/services/webhook_ingest_service.py`
   (`TOPIC_TO_OPERATION`) and register a handler with `@job_handler(...)` in
   `backend/app/services/job_processors.py`.
@@ -92,9 +94,10 @@ a Celery beat entry in `backend/app/workers/celery_app.py`.
 
 ## 7. GDPR — `CUSTOMER_PII_LOCATIONS`
 
-Fill in `backend/app/services/compliance_service.py` with the tables/columns that
-hold customer PII (for `customers/redact`) and add your tenant-scoped tables to
-`redact_shop_data`'s FK-safe delete order.
+In `backend/app/services/compliance_service.py`, `CUSTOMER_PII_LOCATIONS` lists
+where customer-linked rows live, by order ID (for `customers/redact`), and
+`SHOP_TABLES` is the FK-safe delete order for `shop/redact`. Add every new
+tenant-scoped table to `SHOP_TABLES`.
 
 ## 8. UI — nav + pages
 

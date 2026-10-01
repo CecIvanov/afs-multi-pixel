@@ -8,12 +8,12 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.logging_config import get_logger
-from app.models import BillingPlan, SubscriptionStatus, Tenant, TenantStatus, TenantSubscription
+from app.models import BillingPlan, MarketPixel, SubscriptionStatus, Tenant, TenantStatus, TenantSubscription
 from app.reference_data import default_subscription_period
 
 logger = get_logger().child({"component": "tenant"})
@@ -194,6 +194,10 @@ class TenantService:
         tenant.access_token_expires_at = None
         tenant.refresh_token_expires_at = None
         tenant.shopify_refresh_token_revoked_at = None
+        # Conversions API tokens go with the Shopify ones; the mapping stays until shop/redact.
+        self.db.execute(
+            update(MarketPixel).where(MarketPixel.tenant_id == tenant.id).values(capi_token_encrypted=None)
+        )
         self.db.commit()
         self.db.refresh(tenant)
         logger.info("tenant.uninstalled", {"tenantId": str(tenant.id), "shop": tenant.shop_domain})

@@ -45,12 +45,25 @@ def _shop_domain(db: Session, job: AsyncJob) -> str:
 # --- handlers ---------------------------------------------------------------
 @job_handler(AsyncJobOperation.APP_UNINSTALL)
 def _handle_app_uninstall(db: Session, job: AsyncJob) -> None:
+    from app.models import Tenant
     from app.services.async_job_service import AsyncJobService
+    from app.services.shopify_session_service import ShopifySessionService
     from app.services.tenant_service import TenantService
 
+    tenant = db.get(Tenant, job.tenant_id)
+    if tenant is None:
+        return
+    if tenant.installed_at and job.created_at and tenant.installed_at > job.created_at:
+        # Reinstalled after this webhook arrived: its sessions and tokens are new.
+        logger.info("job.app_uninstall.superseded_by_reinstall", {"jobId": str(job.id), "tenantId": str(tenant.id)})
+        return
+    shop = tenant.shop_domain
     # Drop this tenant's other pending jobs so a dead tenant can't hold slots.
     AsyncJobService(db).purge_tenant_active_jobs(job.tenant_id)
-    TenantService(db).sync_shopify_uninstall(_shop_domain(db, job))
+    # Drops the Shopify and Conversions API tokens; an uninstalled tenant's
+    # Relays are refused. Everything else waits for shop/redact.
+    TenantService(db).sync_shopify_uninstall(shop)
+    ShopifySessionService(db).delete_shop_sessions(shop)
 
 
 @job_handler(AsyncJobOperation.SHOP_REDACT)
@@ -69,7 +82,7 @@ def _handle_customer_data_request(db: Session, job: AsyncJob) -> None:
     ComplianceService(db).export_customer_data(
         shop_domain=_shop_domain(db, job),
         shopify_customer_id=customer.get("id"),
-        customer_email=customer.get("email"),
+        orders_requested=payload.get("orders_requested"),
     )
 
 
@@ -81,8 +94,8 @@ def _handle_customer_redact(db: Session, job: AsyncJob) -> None:
     customer = payload.get("customer") or {}
     ComplianceService(db).redact_customer_data(
         shop_domain=_shop_domain(db, job),
+        orders_to_redact=payload.get("orders_to_redact") or [],
         shopify_customer_id=customer.get("id"),
-        customer_email=customer.get("email"),
     )
 
 
@@ -124,6 +137,24 @@ def _handle_token_refresh(db: Session, job: AsyncJob) -> None:
     if tenant is None:
         return
     ShopifyTokenRefreshService(db).refresh_tenant_tokens(tenant, reason=job.topic or "token_refresh")
+
+
+@job_handler(AsyncJobOperation.ORDERS_CREATE)
+def _handle_orders_create(db: Session, job: AsyncJob) -> None:
+    # The Purchase join lands with #9; until then the order is only acknowledged.
+    # Either way no raw order data outlives processing (spec §7).
+    from app.models import WebhookEvent
+
+    job.payload = None
+    if job.webhook_event_id and (event := db.get(WebhookEvent, job.webhook_event_id)) is not None:
+        event.payload = {}
+    logger.info("job.orders_create.not_joined", {"jobId": str(job.id), "tenantId": str(job.tenant_id)})
+
+
+@job_handler(AsyncJobOperation.MARKETS_SYNC)
+def _handle_markets_sync(db: Session, job: AsyncJob) -> None:
+    # The Market re-fetch lands with #4; until then the change is acknowledged.
+    logger.info("job.markets_sync.not_synced", {"jobId": str(job.id), "tenantId": str(job.tenant_id)})
 
 
 @job_handler(AsyncJobOperation.EXAMPLE_OP)

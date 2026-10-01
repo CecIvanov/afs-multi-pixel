@@ -104,6 +104,12 @@ class ShopifySessionService:
             },
         )
 
+    def delete_shop_sessions(self, shop_domain: str) -> int:
+        """Delete every Prisma ``Session`` row for the shop (app/uninstalled)."""
+        result = self.db.execute(text('DELETE FROM "Session" WHERE shop = :shop'), {"shop": shop_domain})
+        self.db.commit()
+        return int(result.rowcount or 0)
+
     @staticmethod
     def credentials_from_session_row(row: dict[str, Any]) -> ShopifyTokenCredentials | None:
         access_token = str(row.get("access_token") or "").strip()

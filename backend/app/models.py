@@ -10,6 +10,10 @@ shop installs the app:
 
 Phase 2 adds ``WebhookEvent`` + the durable ``AsyncJob`` queue; Phase 3 extends
 the billing tables (pending plan, trial, usage, subscription events).
+
+AFS Multi Pixel adds its own tenant-scoped tables (spec §6): ``MarketPixel`` (the
+Pixel Mapping, with encrypted Conversions API tokens), ``ServerEvent`` (the Server
+Event queue + event log) and ``PendingPurchase`` (the Purchase join).
 """
 
 from __future__ import annotations
@@ -56,6 +60,13 @@ __all__ = [
     "AsyncJobStatus",
     "AsyncJobOperation",
     "AsyncJob",
+    "TokenState",
+    "MarketPixel",
+    "ServerEventSource",
+    "ServerEventStatus",
+    "ServerEvent",
+    "purchase_event_id",
+    "PendingPurchase",
 ]
 
 
@@ -249,6 +260,10 @@ class AsyncJobOperation(str, enum.Enum):
     # Proactively refresh a tenant's expiring Shopify offline token (see
     # services/shopify_token_refresh_service.py). Enqueued on a beat + on 401.
     TOKEN_REFRESH = "token_refresh"
+    # orders/create: the Purchase join (handler lands with #9).
+    ORDERS_CREATE = "orders_create"
+    # markets/create|update|delete: re-fetch the shop's Markets (handler lands with #4).
+    MARKETS_SYNC = "markets_sync"
     EXAMPLE_OP = "example_op"
 
 
@@ -277,7 +292,7 @@ class AsyncJob(Base):
     """Durable DB-backed job queue. Idempotency at two layers: the WebhookEvent
     unique id (delivery-level) and this table's partial-unique pending-dedupe index
     (work-level). Claimed with FOR UPDATE SKIP LOCKED under per-tenant/global
-    in-flight caps; retried with exponential backoff into a FAILED dead-letter; a
+    in-flight caps; retried on the event backoff schedule into a FAILED dead-letter; a
     stale-processing reaper requeues jobs orphaned by dead workers."""
 
     __tablename__ = "async_jobs"
@@ -327,3 +342,103 @@ class AsyncJob(Base):
     )
 
     tenant: Mapped[Tenant] = relationship()
+
+
+# --- AFS Multi Pixel ----------------------------------------------------------
+class TokenState(str, enum.Enum):
+    OK = "ok"
+    REJECTED = "rejected"
+
+
+class MarketPixel(Base):
+    """The Pixel Mapping: one Market Pixel per Market. ``capi_token_encrypted`` is
+    the Conversions API token as token_cipher ciphertext; it is NULL after
+    app/uninstalled (tokens go at once, the rest waits for shop/redact)."""
+
+    __tablename__ = "market_pixels"
+    __table_args__ = (UniqueConstraint("tenant_id", "shopify_market_id", name="uq_market_pixels_tenant_market"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tenants.id"), nullable=False)
+    shopify_market_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    pixel_id: Mapped[str] = mapped_column(String(32), nullable=False)
+    pixel_name: Mapped[str | None] = mapped_column(String(255))
+    capi_token_encrypted: Mapped[str | None] = mapped_column(Text)
+    test_event_code: Mapped[str | None] = mapped_column(String(64))
+    token_state: Mapped[TokenState] = mapped_column(
+        postgres_enum(TokenState, "token_state"), default=TokenState.OK, nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class ServerEventSource(str, enum.Enum):
+    RELAY = "relay"
+    WEBHOOK = "webhook"
+
+
+class ServerEventStatus(str, enum.Enum):
+    RECEIVED = "received"
+    SENT = "sent"
+    SKIPPED = "skipped"
+    WAITING = "waiting"
+    REJECTED = "rejected"
+    FAILED = "failed"
+    PAUSED = "paused"
+
+
+def purchase_event_id(order_id: int | str) -> str:
+    """The event ID a Purchase carries in the browser and on the server, so Meta
+    deduplicates the two (spec §3.1)."""
+    return f"purchase-{order_id}"
+
+
+class ServerEvent(Base):
+    """A Server Event: the queue and the event log. Holds no raw personal data.
+    A Purchase's ``event_id`` is ``purchase_event_id(order_id)``, which is how
+    customers/redact finds it."""
+
+    __tablename__ = "server_events"
+    __table_args__ = (
+        Index("ix_server_events_tenant_event_id", "tenant_id", "event_id"),
+        Index("ix_server_events_due", "status", "next_attempt_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tenants.id"), nullable=False)
+    source: Mapped[ServerEventSource] = mapped_column(
+        postgres_enum(ServerEventSource, "server_event_source"), nullable=False
+    )
+    event_name: Mapped[str] = mapped_column(String(64), nullable=False)
+    event_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    shopify_market_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    pixel_id: Mapped[str] = mapped_column(String(32), nullable=False)
+    marketing_consent: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
+    status: Mapped[ServerEventStatus] = mapped_column(
+        postgres_enum(ServerEventStatus, "server_event_status"), default=ServerEventStatus.RECEIVED, nullable=False
+    )
+    attempt_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    next_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    meta_response: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class PendingPurchase(Base):
+    """The Purchase join: the relayed browser half and the hashed orders/create
+    customer data meet here by order ID. Expires after 7 days."""
+
+    __tablename__ = "pending_purchases"
+    __table_args__ = (UniqueConstraint("tenant_id", "order_id", name="uq_pending_purchases_tenant_order"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tenants.id"), nullable=False)
+    order_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    browser_half: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    hashed_customer_data: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

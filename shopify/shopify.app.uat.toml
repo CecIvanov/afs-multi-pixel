@@ -44,5 +44,22 @@ api_version = "2026-10"
   compliance_topics = ["shop/redact"]
   uri = "/webhooks/shop/redact"
 
+  # Domain topics: the Purchase join (#9) and the Market re-fetch (#4).
+  [[webhooks.subscriptions]]
+  topics = ["orders/create"]
+  uri = "/webhooks/orders/create"
+
+  [[webhooks.subscriptions]]
+  topics = ["markets/create"]
+  uri = "/webhooks/markets/create"
+
+  [[webhooks.subscriptions]]
+  topics = ["markets/update"]
+  uri = "/webhooks/markets/update"
+
+  [[webhooks.subscriptions]]
+  topics = ["markets/delete"]
+  uri = "/webhooks/markets/delete"
+
 [build]
 automatically_update_urls_on_dev = false

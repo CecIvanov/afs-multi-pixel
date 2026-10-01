@@ -4,7 +4,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -92,5 +92,49 @@ test("runtime SCOPES in env examples and the compose default agree with app.conf
   ];
   for (const [file, regex] of copies) {
     assert.equal(capture(readRepoFile(file), regex, file), configScopes, `${file} SCOPES != app.config.json shopify.scopes`);
+  }
+});
+
+// Webhook subscriptions: each toml is standalone, so the three must declare the
+// same topics at the same URIs, and every URI needs its webhooks.*.tsx route.
+function webhookSubscriptions(toml) {
+  const subs = [];
+  for (const block of toml.split("[[webhooks.subscriptions]]").slice(1)) {
+    const kind = block.match(/^\s*(topics|compliance_topics)\s*=\s*\[([^\]]*)\]/m);
+    const uri = block.match(/^\s*uri\s*=\s*"([^"]*)"/m);
+    if (!kind || !uri) continue;
+    const topics = [...kind[2].matchAll(/"([^"]+)"/g)].map((m) => m[1]);
+    subs.push(`${kind[1]}=${topics.join(",")} -> ${uri[1]}`);
+  }
+  return subs.sort();
+}
+
+test("webhook subscriptions agree across every env toml and each URI has a route", () => {
+  const [devFile, ...otherFiles] = ENV_TOMLS;
+  const expected = webhookSubscriptions(readFileSync(join(shopifyDir, devFile), "utf8"));
+  for (const file of otherFiles) {
+    assert.deepEqual(webhookSubscriptions(readFileSync(join(shopifyDir, file), "utf8")), expected, `${file} webhooks != ${devFile}`);
+  }
+  for (const sub of expected) {
+    const uri = sub.split(" -> ")[1];
+    const route = `webhooks.${uri.replace(/^\/webhooks\//, "").replaceAll("/", ".")}.tsx`;
+    assert.ok(existsSync(join(appDir, "routes", route)), `${uri} has no route file app/routes/${route}`);
+  }
+});
+
+test("the v1 webhook topics are all subscribed", () => {
+  const subs = webhookSubscriptions(readFileSync(join(shopifyDir, ENV_TOMLS[0]), "utf8")).join("\n");
+  for (const topic of [
+    "app/uninstalled",
+    "app/scopes_update",
+    "orders/create",
+    "markets/create",
+    "markets/update",
+    "markets/delete",
+    "customers/data_request",
+    "customers/redact",
+    "shop/redact",
+  ]) {
+    assert.match(subs, new RegExp(`[=,]${topic}[, ]`), `${topic} is not subscribed`);
   }
 });

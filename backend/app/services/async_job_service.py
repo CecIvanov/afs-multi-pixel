@@ -2,9 +2,9 @@
 
 Idempotency at two layers: WebhookEvent (delivery-level) and this table's
 partial-unique pending-dedupe index (work-level). claim_next uses FOR UPDATE SKIP
-LOCKED under per-tenant + global in-flight caps; failures retry with exponential
-backoff into a FAILED dead-letter; reclaim_stale_processing_jobs requeues jobs
-orphaned by dead workers (mandatory — otherwise one orphan wedges a tenant's queue).
+LOCKED under per-tenant + global in-flight caps; failures retry on the event
+backoff schedule (job_retry_schedule_seconds) into a FAILED dead-letter;
+reclaim_stale_processing_jobs requeues jobs orphaned by dead workers (mandatory — otherwise one orphan wedges a tenant's queue).
 """
 
 from __future__ import annotations
@@ -31,6 +31,8 @@ _PRIORITY: dict[AsyncJobOperation, int] = {
     AsyncJobOperation.CUSTOMER_REDACT: 85,
     AsyncJobOperation.TOKEN_REFRESH: 80,
     AsyncJobOperation.SCOPES_UPDATE: 70,
+    AsyncJobOperation.ORDERS_CREATE: 60,
+    AsyncJobOperation.MARKETS_SYNC: 60,
     AsyncJobOperation.EXAMPLE_OP: 50,
     AsyncJobOperation.SHOP_INFO_FETCH: 10,
 }
@@ -102,7 +104,7 @@ class AsyncJobService:
             payload=payload,
             scheduled_at=scheduled_at,
             status=AsyncJobStatus.PENDING,
-            max_attempts=get_settings().job_max_attempts,
+            max_attempts=len(get_settings().job_retry_schedule_seconds) + 1,
         )
         self.db.add(job)
         self.db.commit()
@@ -311,10 +313,8 @@ class AsyncJobService:
         if job.attempt_count >= job.max_attempts:
             self._fail_job(job, message)
             return
-        delay = min(
-            settings.job_retry_base_seconds * (2 ** max(job.attempt_count - 1, 0)),
-            settings.job_retry_max_seconds,
-        )
+        schedule = settings.job_retry_schedule_seconds
+        delay = schedule[min(max(job.attempt_count - 1, 0), len(schedule) - 1)]
         job.status = AsyncJobStatus.PENDING
         job.scheduled_at = datetime.now(UTC) + timedelta(seconds=delay)
         job.claimed_by = None

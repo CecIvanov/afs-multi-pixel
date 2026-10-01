@@ -59,9 +59,9 @@ class Settings(BaseSettings):
     job_tenant_in_flight_limit: int = 4
     job_global_in_flight_limit: int = 16
     job_idle_poll_seconds: float = 5.0
-    job_max_attempts: int = 5
-    job_retry_base_seconds: int = 30
-    job_retry_max_seconds: int = 3600
+    # The event backoff (spec §3.2): retry after 1 min, 5 min, 30 min, 2 h, 6 h,
+    # then dead-letter. A job gets one attempt plus one per delay.
+    job_retry_schedule_seconds: tuple[int, ...] = (60, 300, 1800, 7200, 21600)
     job_stale_processing_seconds: int = 120
     job_reap_interval_seconds: float = 30.0
     job_completed_retention_hours: int = 48
