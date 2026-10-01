@@ -55,3 +55,42 @@ test("scopes agree between app.config.json and every env toml", () => {
     assert.equal(tomlValue(toml, "scopes"), configScopes, `${file} scopes != app.config.json shopify.scopes`);
   }
 });
+
+// Copies outside the tomls that hard-code the same values: fallbacks used when
+// app.config.json can't be read, the SCOPES the Node app actually requests at
+// runtime, and the setup docs. Each must follow app.config.json.
+function readRepoFile(path) {
+  return readFileSync(join(repoRoot, path), "utf8");
+}
+
+function capture(text, regex, file) {
+  const m = text.match(regex);
+  assert.ok(m, `${file}: expected to find ${regex}`);
+  return m[1];
+}
+
+test("API version fallbacks and docs agree with app.config.json", () => {
+  const configVersion = appConfig.shopify?.apiVersion;
+  const copies = [
+    ["backend/app/services/shopify_shop_info_service.py", /\.get\("apiVersion", "([^"]+)"\)/],
+    ["scripts/lib/config.sh", /_config_get shopify\.apiVersion ([0-9-]+)\)/],
+    ["docs/SETUP.md", /\(currently `([0-9-]+)`\)/],
+    ["README.md", /"apiVersion": "([0-9-]+)"/],
+  ];
+  for (const [file, regex] of copies) {
+    assert.equal(capture(readRepoFile(file), regex, file), configVersion, `${file} API version != app.config.json apiVersion`);
+  }
+});
+
+test("runtime SCOPES in env examples and the compose default agree with app.config.json", () => {
+  const configScopes = (appConfig.shopify?.scopes || []).join(",");
+  const copies = [
+    [".env.example", /^SCOPES=(.*)$/m],
+    [".env.uat.example", /^SCOPES=(.*)$/m],
+    [".env.prd.example", /^SCOPES=(.*)$/m],
+    ["docker-compose.yml", /SCOPES: \$\{SCOPES:-([^}]*)\}/],
+  ];
+  for (const [file, regex] of copies) {
+    assert.equal(capture(readRepoFile(file), regex, file), configScopes, `${file} SCOPES != app.config.json shopify.scopes`);
+  }
+});

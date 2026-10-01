@@ -25,6 +25,10 @@ webhooks must be **identical across all three** and match `app.config.json`.
   every env toml. A guard test (`shopify/app/config-guards.test.mjs`) fails on drift.
 - **API version**: `app.config.json` `shopify.apiVersion`, every toml's
   `api_version`, and `shopify/app/shopify.server.ts` (`ApiVersion.*`). Same guard.
+- **Other copies** the same guard file checks: the API-version fallbacks in
+  `backend/app/services/shopify_shop_info_service.py` and `scripts/lib/config.sh`,
+  the version in `docs/SETUP.md` and `README.md`, and the runtime `SCOPES` in every
+  `.env*.example` and the `docker-compose.yml` default.
 
 ## 2a. Environments — dev / uat / prd (separate apps)
 
