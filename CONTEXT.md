@@ -1,4 +1,4 @@
-# Multi-Pixel
+# AFS Multi Pixel
 
 A public Shopify app that sends a store's Meta pixel events to a different Meta pixel for each Shopify Market, so that Meta's ad optimisation learns which products are popular in each market separately.
 
@@ -38,3 +38,11 @@ _Avoid_: browser note, beacon
 **Market Catalog**:
 The Meta product catalog used for one Market's ads; its item `id` is the Shopify variant ID and its `item_group_id` the Shopify product ID.
 _Avoid_: feed (the feed is the file that fills a catalog)
+
+**UAT App**:
+The custom-distribution copy of AFS Multi Pixel, installed only on test stores, where every change is tested before release.
+_Avoid_: staging app, dev app
+
+**Production App**:
+The public App Store listing of AFS Multi Pixel that merchants install.
+_Avoid_: live app, public app (ambiguous with the App Store listing itself)

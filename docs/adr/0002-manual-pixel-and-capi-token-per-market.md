@@ -1,0 +1,3 @@
+# Merchants paste a pixel ID and Conversions API token per Market; no Meta login in v1
+
+Facebook Login for Business (the Conversions API partner template) would let merchants pick pixels and give us one non-expiring token. But it needs Meta App Review, Business Verification and a Tech Provider check (weeks), and adding scopes to the existing AdFeed Studio Meta app would put its pending review at risk. v1 therefore requires a **pixel ID + Conversions API token pair** for every Market that sends, entered by hand and checked against the Graph API (`GET /<pixel>`) before saving, as almost every competing app does. A Meta login can be added later without changing the Pixel Mapping model.
