@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.services.token_cipher import TokenDecryptError, create_token_cipher, load_token_key
+from app.services.token_cipher import TokenCipher, TokenDecryptError, load_token_key
 
 KEY_HEX = "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff"
 TOKEN = "EAAJZBexampleConversionsApiToken0123456789"
@@ -13,7 +13,7 @@ TOKEN = "EAAJZBexampleConversionsApiToken0123456789"
 
 @pytest.mark.unit
 def test_round_trip_returns_the_original_token():
-    cipher = create_token_cipher(load_token_key(KEY_HEX))
+    cipher = TokenCipher(load_token_key(KEY_HEX))
 
     blob = cipher.encrypt(TOKEN)
 
@@ -23,17 +23,17 @@ def test_round_trip_returns_the_original_token():
 
 @pytest.mark.unit
 def test_encrypting_twice_gives_different_blobs():
-    cipher = create_token_cipher(load_token_key(KEY_HEX))
+    cipher = TokenCipher(load_token_key(KEY_HEX))
 
     assert cipher.encrypt(TOKEN) != cipher.encrypt(TOKEN)
 
 
 @pytest.mark.unit
 def test_a_different_key_cannot_decrypt():
-    blob = create_token_cipher(load_token_key(KEY_HEX)).encrypt(TOKEN)
-    other = create_token_cipher(load_token_key("ff" * 32))
+    blob = TokenCipher(load_token_key(KEY_HEX)).encrypt(TOKEN)
+    other = TokenCipher(load_token_key("ff" * 32))
 
-    with pytest.raises(ValueError):
+    with pytest.raises(TokenDecryptError):
         other.decrypt(blob)
 
 
@@ -48,7 +48,7 @@ def test_a_different_key_cannot_decrypt():
     ],
 )
 def test_an_altered_blob_fails_instead_of_returning_garbage(mangle):
-    cipher = create_token_cipher(load_token_key(KEY_HEX))
+    cipher = TokenCipher(load_token_key(KEY_HEX))
     blob = cipher.encrypt(TOKEN)
 
     with pytest.raises(TokenDecryptError):
@@ -58,9 +58,9 @@ def test_an_altered_blob_fails_instead_of_returning_garbage(mangle):
 @pytest.mark.unit
 def test_a_base64_key_works_like_the_same_key_in_hex():
     key_b64 = "ABEiM0RVZneImaq7zN3u/wARIjNEVWZ3iJmqu8zd7v8="  # the same 32 bytes as KEY_HEX
-    blob = create_token_cipher(load_token_key(KEY_HEX)).encrypt(TOKEN)
+    blob = TokenCipher(load_token_key(KEY_HEX)).encrypt(TOKEN)
 
-    assert create_token_cipher(load_token_key(key_b64)).decrypt(blob) == TOKEN
+    assert TokenCipher(load_token_key(key_b64)).decrypt(blob) == TOKEN
 
 
 @pytest.mark.unit

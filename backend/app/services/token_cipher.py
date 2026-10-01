@@ -67,10 +67,6 @@ class TokenCipher:
             raise TokenDecryptError("token ciphertext doesn't match this key") from exc
 
 
-def create_token_cipher(key: bytes) -> TokenCipher:
-    return TokenCipher(key)
-
-
 def token_cipher_from_settings() -> TokenCipher:
     """The cipher for this environment, keyed by TOKEN_ENC_KEY."""
-    return create_token_cipher(load_token_key(get_settings().token_enc_key))
+    return TokenCipher(load_token_key(get_settings().token_enc_key))
