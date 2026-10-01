@@ -19,6 +19,7 @@ export default function App() {
     <AppProvider apiKey={apiKey}>
       <s-app-nav>
         <s-link href="/app">Market pixels</s-link>
+        <s-link href="/app/events">Event log</s-link>
       </s-app-nav>
       <Outlet />
     </AppProvider>

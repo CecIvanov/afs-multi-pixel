@@ -22,3 +22,19 @@ Meta's standard e-commerce events that the app sends: PageView, ViewContent, Sea
 **Official Meta App**:
 Meta's own "Facebook & Instagram" Shopify sales channel, which sends every event to a single pixel.
 _Avoid_: Meta channel, FB app
+
+**Browser Event**:
+A Standard Funnel event the shopper's browser sends to a Market Pixel (through Meta's pixel script or Meta's `/tr` endpoint).
+_Avoid_: client event, pixel event
+
+**Server Event**:
+The same event sent by the app's backend to the Market Pixel through Meta's Conversions API, carrying the Browser Event's event ID so Meta keeps one of the two.
+_Avoid_: CAPI event, backend event
+
+**Relay**:
+The encrypted copy of a Browser Event that the storefront sends to the app's backend, from which the Server Event is made.
+_Avoid_: browser note, beacon
+
+**Market Catalog**:
+The Meta product catalog used for one Market's ads; its item `id` is the Shopify variant ID and its `item_group_id` the Shopify product ID.
+_Avoid_: feed (the feed is the file that fills a catalog)

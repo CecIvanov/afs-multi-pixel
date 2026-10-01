@@ -8,6 +8,14 @@ export type MultiPixelMarketsQueryVariables = AdminTypes.Exact<{ [key: string]: 
 
 export type MultiPixelMarketsQuery = { markets: { nodes: Array<Pick<AdminTypes.Market, 'id' | 'name' | 'handle' | 'status'>> } };
 
+export type MultiPixelHostsQueryVariables = AdminTypes.Exact<{ [key: string]: never; }>;
+
+
+export type MultiPixelHostsQuery = { shop: (
+    Pick<AdminTypes.Shop, 'myshopifyDomain'>
+    & { primaryDomain: Pick<AdminTypes.Domain, 'host'> }
+  ), markets: { nodes: Array<{ webPresences: { nodes: Array<{ domain?: AdminTypes.Maybe<Pick<AdminTypes.Domain, 'host'>> }> } }> } };
+
 export type MultiPixelInstallationQueryVariables = AdminTypes.Exact<{ [key: string]: never; }>;
 
 
@@ -42,6 +50,7 @@ export type MultiPixelWebPixelQuery = { webPixel?: AdminTypes.Maybe<Pick<AdminTy
 
 interface GeneratedQueryTypes {
   "#graphql\n      query multiPixelMarkets {\n        markets(first: 100) {\n          nodes {\n            id\n            name\n            handle\n            status\n          }\n        }\n      }": {return: MultiPixelMarketsQuery, variables: MultiPixelMarketsQueryVariables},
+  "#graphql\n      query multiPixelHosts {\n        shop {\n          myshopifyDomain\n          primaryDomain {\n            host\n          }\n        }\n        markets(first: 100) {\n          nodes {\n            webPresences(first: 20) {\n              nodes {\n                domain {\n                  host\n                }\n              }\n            }\n          }\n        }\n      }": {return: MultiPixelHostsQuery, variables: MultiPixelHostsQueryVariables},
   "#graphql\n      query multiPixelInstallation {\n        currentAppInstallation {\n          id\n        }\n      }": {return: MultiPixelInstallationQuery, variables: MultiPixelInstallationQueryVariables},
   "#graphql\n        query multiPixelWebPixel {\n          webPixel {\n            id\n          }\n        }": {return: MultiPixelWebPixelQuery, variables: MultiPixelWebPixelQueryVariables},
 }

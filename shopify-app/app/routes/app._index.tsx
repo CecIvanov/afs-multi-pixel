@@ -27,6 +27,8 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     id: String(id),
     name: String(form.get(`marketName:${id}`) ?? ""),
     pixelId: String(form.get(`pixelId:${id}`) ?? ""),
+    capiToken: String(form.get(`capiToken:${id}`) ?? ""),
+    testEventCode: String(form.get(`testEventCode:${id}`) ?? ""),
   }));
 
   try {
@@ -70,13 +72,29 @@ export default function Index() {
                     name={`marketName:${market.id}`}
                     value={market.name}
                   />
-                  <s-text-field
-                    label={`${market.name} (${market.status.toLowerCase()})`}
-                    name={`pixelId:${market.id}`}
-                    defaultValue={market.pixelId}
-                    placeholder="Meta pixel ID"
-                    details={`Market ID ${market.id} · ${market.handle}`}
-                  />
+                  <s-stack direction="block" gap="small-200">
+                    <s-heading>
+                      {market.name} ({market.status.toLowerCase()})
+                    </s-heading>
+                    <s-text-field
+                      label="Meta pixel ID"
+                      name={`pixelId:${market.id}`}
+                      defaultValue={market.pixelId}
+                      details={`Market ID ${market.id} · ${market.handle}`}
+                    />
+                    <s-password-field
+                      label="Conversions API access token"
+                      name={`capiToken:${market.id}`}
+                      defaultValue={market.capiToken}
+                      details="Events Manager → this pixel's dataset → Settings → Conversions API → Generate access token"
+                    />
+                    <s-text-field
+                      label="Test event code (optional)"
+                      name={`testEventCode:${market.id}`}
+                      defaultValue={market.testEventCode}
+                      details="From Events Manager → Test events. While set, server events show up there. Clear it for real traffic."
+                    />
+                  </s-stack>
                 </div>
               ))}
             </s-stack>
@@ -100,8 +118,10 @@ export default function Index() {
         <s-paragraph>
           Switch on the <s-text type="strong">Multi-Pixel</s-text> app embed in
           Online Store → Themes → Customize → App embeds. It sends PageView,
-          ViewContent and Search. AddToCart and the checkout events (including
-          Purchase) are sent by the app&apos;s pixel automatically.
+          ViewContent and Search; AddToCart and the checkout events (including
+          Purchase) come from the app&apos;s pixel. Every event is also relayed,
+          encrypted, to the app&apos;s backend and sent to the Conversions API for
+          Markets with a token. See the Event log.
         </s-paragraph>
       </s-section>
     </s-page>

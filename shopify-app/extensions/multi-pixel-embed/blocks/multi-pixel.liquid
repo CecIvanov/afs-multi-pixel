@@ -1,32 +1,53 @@
 {%- comment -%}
-  Resolves the shopper's Market in Liquid, looks up its Market Pixel in the app's Pixel Mapping
-  (app-owned metafield, written by the app admin) and hands both to multi-pixel.js.
-  The market id is also stored in a first-party cookie so the app's Web Pixel can route
-  AddToCart to the same Market Pixel.
+  Resolves the shopper's Market in Liquid, looks up its Market Pixel in the app's config
+  (app-owned metafield written by the app admin: pixels, relay public key and endpoint) and hands
+  everything to multi-pixel.js. The market id is also stored in a first-party cookie so the app's
+  Web Pixel can route AddToCart to the same Market Pixel.
 {%- endcomment -%}
 {%- liquid
-  assign mapping = app.metafields.multi_pixel.mapping.value
+  assign config = app.metafields.multi_pixel.config.value
   assign market_id = localization.market.id | append: ''
-  assign pixel_id = mapping[market_id]
+  assign pixel_id = config.pixels[market_id]
 
   assign variant = product.selected_or_first_available_variant
 -%}
 <script id="multi-pixel-config" type="application/json">
   {
+    "shop": {{ shop.permanent_domain | json }},
     "marketId": {{ market_id | json }},
     "marketHandle": {{ localization.market.handle | json }},
     "pixelId": {{ pixel_id | json }},
+    "endpoint": {{ config.endpoint | json }},
+    "publicKey": {{ config.publicKey | json }},
     "currency": {{ cart.currency.iso_code | json }},
     "template": {{ template.name | json }},
     {%- if template.name == 'product' and product -%}
     "product": {
       "id": {{ product.id | json }},
       "name": {{ product.title | json }},
+      "type": {{ product.type | json }},
       "variantId": {{ variant.id | json }},
       "price": {{ variant.price | divided_by: 100.0 | json }}
     },
     {%- else -%}
     "product": null,
+    {%- endif -%}
+    {%- if template.name == 'cart' -%}
+    "cart": {
+      "productIds": {{ cart.items | map: 'product_id' | uniq | json }},
+      "value": {{ cart.total_price | divided_by: 100.0 | json }},
+      "numItems": {{ cart.item_count | json }}
+    },
+    {%- else -%}
+    "cart": null,
+    {%- endif -%}
+    {%- if template.name == 'collection' and collection -%}
+    "collection": {
+      "name": {{ collection.title | json }},
+      "productIds": {{ collection.products | map: 'id' | json }}
+    },
+    {%- else -%}
+    "collection": null,
     {%- endif -%}
     "searchTerms": {% if template.name == 'search' %}{{ search.terms | json }}{% else %}null{% endif %}
   }

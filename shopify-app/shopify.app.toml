@@ -7,7 +7,7 @@ embedded = true
 
 [access_scopes]
 # Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
-scopes = "read_markets,write_pixels,read_customer_events"
+scopes = "read_markets,write_pixels,read_customer_events,read_orders"
 
 [auth]
 redirect_urls = [
@@ -30,3 +30,8 @@ api_version = "2026-10"
   [[webhooks.subscriptions]]
   topics = [ "app/scopes_update" ]
   uri = "/webhooks/app/scopes_update"
+
+  # Server half of Purchase for the Conversions API. Handled by: /app/routes/webhooks.orders.create.tsx
+  [[webhooks.subscriptions]]
+  topics = [ "orders/create" ]
+  uri = "/webhooks/orders/create"

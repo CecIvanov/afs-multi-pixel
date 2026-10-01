@@ -24,6 +24,9 @@ A **working POC app** installed on the dev store `gpay3y-2v.myshopify.com` (BG a
 
 ## Decisions so far
 
+- **Content IDs and event shape (2026-10-01, grilled with the user):** match the Official Meta App exactly (observed live on colourpop.com): product IDs with `content_type: product_group` on every event, which matches AdFeed Market Catalogs' `item_group_id`. AddToCart `value` is the unit price, `content_category` is the product type, and ViewContent also fires on cart and collection pages. This closes [Which identifier goes into content_ids so events match the merchant's catalogs?](issues/05-content-ids-format.md).
+- **Conversions API (2026-10-01, grilled with the user; research on branch `research/capi-and-content-ids`):** every Browser Event is relayed encrypted (RSA-OAEP + AES-GCM) to the backend and sent as a Server Event to the same Market Pixel with the same event ID. The token is pasted per Market Pixel, with an optional Test event code. Purchase joins the relayed browser Purchase (consent and Market) with the `orders/create` webhook (hashed customer data) on the order id, using event ID `purchase-<orderId>`. There's no server Purchase without a browser Purchase (cookie consent; `buyer_accepts_marketing` is email consent, not cookie consent). The backend rejects foreign Origins, unknown shops and unmapped market → pixel pairs. An Event log page shows what happened.
+
 - **POC verified end to end (2026-09-30):** on `gpay3y-2v` the user confirmed the full Standard Funnel (PageView through Purchase) reaches the right Market Pixel for both the BG and GR Markets. The earlier missing checkout events were a Market configuration issue in the store, not the app.
 
 <!-- one line per closed ticket: [title](issues/NN-slug.md): gist -->
@@ -36,8 +39,10 @@ A **working POC app** installed on the dev store `gpay3y-2v.myshopify.com` (BG a
 
 ## Not yet specified
 
+- **CAPI verification on `gpay3y-2v`**: deploy the Conversions API build and confirm in Events Manager that each Market Pixel shows browser and server events deduplicated (Purchase included), plus the match quality of server Purchases.
+
+
 - **Admin UX for the Pixel Mapping**: how the merchant sees their Markets and assigns pixels, and what happens when Markets are added, renamed or deleted in Shopify after mapping.
-- **Pixel lifecycle**: removal and cleanup on uninstall, and re-syncing when Markets are added or deleted in Shopify. (Activation and sync on save are built.)
 - **Event shape per Standard Funnel event**: which parameters each event sends to Meta (value, currency, content_type, contents, event_id for future CAPI dedup) and how they're built from Shopify's event payloads.
 - **App Store constraints**: review requirements that affect a pixel app (privacy declarations, GDPR webhooks, performance rules) and that the POC must not paint us out of. This includes whether to request protected customer data approval so advanced matching (hashed email and phone) can raise match quality.
 
@@ -45,7 +50,7 @@ A **working POC app** installed on the dev store `gpay3y-2v.myshopify.com` (BG a
 
 - [Set up a dev store with BG and RO Markets and capture real Web Pixel payloads](issues/06-dev-store-with-markets.md): superseded. The user chose to build the POC directly and verify against it instead of a throwaway probe.
 
-- **Conversions API (CAPI) and Meta OAuth**: browser pixel only for the POC. The spec should still leave room for an `event_id` so CAPI dedup can be added later.
+- **Uninstall cleanup / pixel lifecycle**: the POC is temporary code (the user's call on 2026-09-30).
 - **Pixel ID validation / Meta account connection**: manual entry only for the POC.
 - **Creating or syncing per-market product catalogs**: the merchant's job (or another tool's). The app only has to send `content_ids` that match those catalogs.
 - **Headless / Hydrogen storefronts**: Online Store only.

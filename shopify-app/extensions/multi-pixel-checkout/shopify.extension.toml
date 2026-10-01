@@ -16,3 +16,13 @@ type = "object"
 name = "Pixel Mapping"
 description = "JSON object of numeric Shopify market id to Meta pixel id. Written by the app."
 type = "single_line_text_field"
+
+[settings.fields.publicKey]
+name = "Relay public key"
+description = "Base64 SPKI RSA public key for the encrypted relay. Written by the app."
+type = "single_line_text_field"
+
+[settings.fields.endpoint]
+name = "Relay endpoint"
+description = "The app backend URL that receives relayed events. Written by the app."
+type = "single_line_text_field"

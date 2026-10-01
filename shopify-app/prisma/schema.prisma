@@ -40,8 +40,60 @@ model MarketPixel {
   marketId   String // numeric Shopify Market id, e.g. "123456" from gid://shopify/Market/123456
   marketName String
   pixelId    String
+  // Conversions API: access token generated for this pixel (Events Manager → Settings), and an
+  // optional Test Events code so server events show up live in Test Events.
+  capiToken     String?
+  testEventCode String?
   updatedAt  DateTime @updatedAt
 
   @@unique([shop, marketId])
   @@index([shop])
+}
+
+// Per-shop data the storefront relay is checked against, refreshed when the mapping is saved.
+model ShopConfig {
+  shop         String   @id
+  allowedHosts String // JSON array of storefront hosts allowed as request Origin
+  updatedAt    DateTime @updatedAt
+}
+
+// The app's RSA key pair for the encrypted storefront → backend relay. Generated on first use.
+model AppKey {
+  id         Int      @id @default(1)
+  publicKey  String // base64 SPKI (DER)
+  privateKey String // base64 PKCS#8 (DER)
+  createdAt  DateTime @default(now())
+}
+
+// A Purchase is sent to CAPI only once both halves are in: the browser's relayed Purchase (which
+// exists only with marketing consent, and carries the Market and Meta cookies) and the
+// orders/create webhook (customer data). Keyed by the numeric order id.
+model PendingPurchase {
+  id        Int       @id @default(autoincrement())
+  shop      String
+  orderId   String
+  browser   String? // JSON of the relayed browser Purchase
+  order     String? // JSON of the orders/create payload
+  sentAt    DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@unique([shop, orderId])
+}
+
+// Everything the backend received and what happened to it, shown on the app's Event log page.
+model EventLog {
+  id         Int      @id @default(autoincrement())
+  shop       String
+  source     String // "storefront" | "webhook"
+  eventName  String
+  eventId    String?
+  marketId   String?
+  pixelId    String?
+  status     String // "sent" | "skipped" | "waiting" | "rejected" | "error"
+  detail     String?
+  origin     String?
+  createdAt  DateTime @default(now())
+
+  @@index([shop, createdAt])
 }
