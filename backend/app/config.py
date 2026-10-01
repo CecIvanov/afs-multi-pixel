@@ -79,6 +79,11 @@ class Settings(BaseSettings):
     # The app's public URL (the Node BFF). The Relay endpoint published to the
     # storefront is <shopify_app_url>/api/events.
     shopify_app_url: str = ""
+    # Relays accepted per minute (spec §3.2), per shopper IP and per shop.
+    relay_rate_limit_per_ip: int = 120
+    relay_rate_limit_per_shop: int = 6000
+    # How often the job pool's sender looks for due Server Events.
+    server_event_poll_seconds: float = 2.0
 
 
 @lru_cache

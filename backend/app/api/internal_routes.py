@@ -14,8 +14,16 @@ from app.schemas import (
     BillingOut,
     BillingReconcileIn,
     BillingReconcileOut,
+    EventLogOut,
+    EventLogRowOut,
     MarketOut,
     MarketsOut,
+    MarketStatsOut,
+    RelayIn,
+    RelayOut,
+    SetupIn,
+    SetupOut,
+    SummaryOut,
     PixelCheckIn,
     PixelCheckOut,
     PixelSaveIn,
@@ -187,6 +195,31 @@ def _market_out(view: MarketView) -> MarketOut:
     return MarketOut.model_validate(asdict(view))
 
 
+def _setup_out(tenant: Tenant) -> SetupOut:
+    return SetupOut(
+        consent_confirmed=tenant.consent_confirmed_at is not None,
+        verified_in_meta=tenant.verified_in_meta_at is not None,
+    )
+
+
+def _markets_out(db: Session, tenant: Tenant, views: list[MarketView], sync_error: str | None = None) -> MarketsOut:
+    from app.services.event_stats import market_stats
+
+    stats = market_stats(db, tenant)
+    markets = []
+    for view in views:
+        out = _market_out(view)
+        if (s := stats.markets.get(view.shopify_market_id)) is not None:
+            out.stats = MarketStatsOut(**asdict(s))
+        markets.append(out)
+    return MarketsOut(
+        markets=markets,
+        summary=SummaryOut(browser_24h=stats.browser_24h, server_24h=stats.server_24h),
+        setup=_setup_out(tenant),
+        sync_error=sync_error,
+    )
+
+
 @router.get("/tenants/by-shop/{shop_domain}/markets", response_model=MarketsOut)
 def list_markets(
     shop_domain: str,
@@ -194,9 +227,10 @@ def list_markets(
     db: Session = Depends(get_db),
     markets: MarketService = Depends(get_market_service),
 ) -> MarketsOut:
-    """The shop's Markets with their Market Pixels. ``sync=true`` (app open)
-    re-fetches them from Shopify first; if that fails the stored list is returned
-    with ``sync_error`` set, so the page still renders."""
+    """The shop's Markets with their Market Pixels, 24 h counts and the setup
+    flags. ``sync=true`` (app open) re-fetches them from Shopify first; if that
+    fails the stored list is returned with ``sync_error`` set, so the page still
+    renders."""
     tenant = _tenant_or_404(db, shop_domain)
     sync_error = None
     if sync:
@@ -208,12 +242,47 @@ def list_markets(
             tenant_id=tenant.id, operation=AsyncJobOperation.STOREFRONT_HOSTS_SYNC, topic="app_open/hosts"
         )
         try:
-            return MarketsOut(markets=[_market_out(v) for v in markets.sync(tenant)])
+            return _markets_out(db, tenant, markets.sync(tenant))
         except Exception as exc:  # noqa: BLE001 — a failed re-fetch must not break the page
             db.rollback()
             sync_error = str(exc)[:500]
             logger.warn("markets.sync_on_open_failed", {"shop": shop_domain, "detail": sync_error})
-    return MarketsOut(markets=[_market_out(v) for v in markets.list_markets(tenant)], sync_error=sync_error)
+    return _markets_out(db, tenant, markets.list_markets(tenant), sync_error)
+
+
+@router.post("/tenants/by-shop/{shop_domain}/setup", response_model=SetupOut)
+def update_setup(shop_domain: str, payload: SetupIn, db: Session = Depends(get_db)) -> SetupOut:
+    """The setup-strip steps only the merchant can confirm (spec §4)."""
+    from datetime import UTC, datetime
+
+    tenant = _tenant_or_404(db, shop_domain)
+    now = datetime.now(UTC)
+    if payload.consent_confirmed is not None:
+        tenant.consent_confirmed_at = now if payload.consent_confirmed else None
+    if payload.verified_in_meta is not None:
+        tenant.verified_in_meta_at = now if payload.verified_in_meta else None
+    db.commit()
+    return _setup_out(tenant)
+
+
+@router.get("/tenants/by-shop/{shop_domain}/events", response_model=EventLogOut)
+def list_events(shop_domain: str, market_id: int | None = None, db: Session = Depends(get_db)) -> EventLogOut:
+    from app.services.event_stats import event_log
+
+    tenant = _tenant_or_404(db, shop_domain)
+    return EventLogOut(events=[EventLogRowOut(**asdict(r)) for r in event_log(db, tenant, market_id=market_id)])
+
+
+@router.post("/relay", response_model=RelayOut)
+def receive_relay(payload: RelayIn, db: Session = Depends(get_db)) -> RelayOut:
+    """A Relay from the public /api/events endpoint on the BFF: decrypted,
+    validated and stored here; the worker sends it (spec §3.2)."""
+    from app.services.relay_service import RelayContext, RelayService
+
+    outcome = RelayService(db).receive(
+        payload.body, RelayContext(origin=payload.origin, ip=payload.ip, user_agent=payload.user_agent)
+    )
+    return RelayOut(outcome=outcome)
 
 
 @router.post("/tenants/by-shop/{shop_domain}/markets/{market_id}/pixel/check", response_model=PixelCheckOut)

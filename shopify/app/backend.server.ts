@@ -174,6 +174,15 @@ export type MarketPixelRecord = {
   test_event_code: string | null;
   token_state: "ok" | "rejected";
   has_token: boolean;
+  token_error: string | null;
+};
+
+export type MarketStatsRecord = {
+  browser: number;
+  server: number;
+  purchases: number;
+  series: number[];
+  last_event_at: string | null;
 };
 
 export type MarketRecord = {
@@ -185,6 +194,7 @@ export type MarketRecord = {
   first_seen_at: string;
   is_new: boolean;
   pixel: MarketPixelRecord | null;
+  stats: MarketStatsRecord;
 };
 
 export type PixelCheckRecord = {
@@ -202,7 +212,12 @@ function marketsPath(shopDomain: string, suffix = "") {
 
 /** The shop's Markets; `sync` re-fetches them from Shopify first (app open). */
 export async function listMarkets(shopDomain: string, { sync = false } = {}) {
-  return backendFetch<{ markets: MarketRecord[]; sync_error: string | null }>(
+  return backendFetch<{
+    markets: MarketRecord[];
+    summary: { browser_24h: number; server_24h: number };
+    setup: SetupRecord;
+    sync_error: string | null;
+  }>(
     marketsPath(shopDomain, sync ? "?sync=true" : ""),
     { shopDomain },
   );
@@ -229,5 +244,46 @@ export async function removeMarketPixel(shopDomain: string, marketId: number) {
   return backendFetch<MarketRecord>(marketsPath(shopDomain, `/${marketId}/pixel`), {
     method: "DELETE",
     shopDomain,
+  });
+}
+
+/** Hand a Relay to the backend, which decrypts, validates and stores it. */
+export async function forwardRelay(relay: {
+  body: string;
+  origin: string | null;
+  ip: string | null;
+  user_agent: string | null;
+}) {
+  return backendFetch<{ outcome: string }>("/api/v1/internal/relay", {
+    method: "POST",
+    body: JSON.stringify(relay),
+  });
+}
+
+export type EventLogRecord = {
+  created_at: string;
+  event_name: string;
+  event_id: string;
+  shopify_market_id: number;
+  sent_as: string;
+  status: string;
+  detail: string | null;
+};
+
+export async function listEvents(shopDomain: string, marketId?: number) {
+  const query = marketId ? `?market_id=${marketId}` : "";
+  return backendFetch<{ events: EventLogRecord[] }>(
+    `/api/v1/internal/tenants/by-shop/${encodeURIComponent(shopDomain)}/events${query}`,
+    { shopDomain },
+  );
+}
+
+export type SetupRecord = { consent_confirmed: boolean; verified_in_meta: boolean };
+
+export async function updateSetup(shopDomain: string, changes: Partial<SetupRecord>) {
+  return backendFetch<SetupRecord>(`/api/v1/internal/tenants/by-shop/${encodeURIComponent(shopDomain)}/setup`, {
+    method: "POST",
+    shopDomain,
+    body: JSON.stringify(changes),
   });
 }

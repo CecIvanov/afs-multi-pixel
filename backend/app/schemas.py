@@ -121,6 +121,15 @@ class PixelOut(BaseModel):
     test_event_code: str | None = None
     token_state: str
     has_token: bool
+    token_error: str | None = None
+
+
+class MarketStatsOut(BaseModel):
+    browser: int = 0
+    server: int = 0
+    purchases: int = 0
+    series: list[int] = Field(default_factory=lambda: [0] * 24)
+    last_event_at: datetime | None = None
 
 
 class MarketOut(BaseModel):
@@ -132,10 +141,28 @@ class MarketOut(BaseModel):
     first_seen_at: datetime
     is_new: bool
     pixel: PixelOut | None = None
+    stats: MarketStatsOut = Field(default_factory=MarketStatsOut)
+
+
+class SummaryOut(BaseModel):
+    browser_24h: int = 0
+    server_24h: int = 0
+
+
+class SetupOut(BaseModel):
+    consent_confirmed: bool = False
+    verified_in_meta: bool = False
+
+
+class SetupIn(BaseModel):
+    consent_confirmed: bool | None = None
+    verified_in_meta: bool | None = None
 
 
 class MarketsOut(BaseModel):
     markets: list[MarketOut]
+    summary: SummaryOut = Field(default_factory=SummaryOut)
+    setup: SetupOut = Field(default_factory=SetupOut)
     # Set when the re-fetch from Shopify failed and the stored list is shown instead.
     sync_error: str | None = None
 
@@ -155,3 +182,30 @@ class PixelCheckOut(BaseModel):
     pixel_name: str | None = None
     owner_name: str | None = None
     error: str | None = None
+
+
+class RelayIn(BaseModel):
+    """A Relay as the BFF received it: the raw envelope and the request facts."""
+
+    body: str = Field(max_length=64 * 1024)
+    origin: str | None = None
+    ip: str | None = None
+    user_agent: str | None = None
+
+
+class RelayOut(BaseModel):
+    outcome: str
+
+
+class EventLogRowOut(BaseModel):
+    created_at: datetime
+    event_name: str
+    event_id: str
+    shopify_market_id: int
+    sent_as: str
+    status: str
+    detail: str | None = None
+
+
+class EventLogOut(BaseModel):
+    events: list[EventLogRowOut]

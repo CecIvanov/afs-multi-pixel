@@ -64,3 +64,46 @@ export function canCheckWithMeta(market, { pixelId, token }) {
   const hasToken = String(token ?? "").trim().length > 0 || !tokenRequired(market);
   return isValidPixelId(pixelId) && hasToken;
 }
+
+export function lastEventLabel(iso, now = new Date()) {
+  if (!iso) return "No events yet";
+  const minutes = Math.floor((now.getTime() - new Date(iso).getTime()) / 60000);
+  if (minutes < 1) return "Last event just now";
+  if (minutes < 60) return `Last event ${minutes} min ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `Last event ${hours} h ago`;
+  return `Last event ${Math.floor(hours / 24)} d ago`;
+}
+
+/** The share of the last 24 h's Browser Events that also reached Meta by server. */
+export function serverShare({ browser_24h, server_24h }) {
+  if (!browser_24h) return "—";
+  const share = (server_24h / browser_24h) * 100;
+  return `${Number.isInteger(share) ? share : share.toFixed(1)}%`;
+}
+
+/**
+ * Bars for the 24-hour events-per-hour chart.
+ * @param {number[]} series
+ * @param {{ width: number, height: number }} box
+ * @returns {{ x: number, width: number, height: number }[]}
+ */
+export function sparkBars(series, { width, height }) {
+  const max = Math.max(...series, 1);
+  const barWidth = width / series.length;
+  return series.map((value, i) => ({
+    x: Math.round(i * barWidth + 1),
+    width: Math.max(1, Math.round(barWidth - 2)),
+    height: Math.max(1, Math.round((value / max) * (height - 2))),
+  }));
+}
+
+/** The setup strip (spec §4). `embedActive` is null while it's still being read. */
+export function setupSteps({ embedActive, markets, setup }) {
+  return [
+    { key: "embed", label: "App embed", done: embedActive === true },
+    { key: "pixels", label: "Pixels", done: markets.some((m) => m.pixel) },
+    { key: "consent", label: "Consent", done: Boolean(setup.consent_confirmed) },
+    { key: "verified", label: "Verified in Meta", done: Boolean(setup.verified_in_meta) },
+  ];
+}

@@ -418,6 +418,8 @@ class MarketPixel(Base):
     token_state: Mapped[TokenState] = mapped_column(
         postgres_enum(TokenState, "token_state"), default=TokenState.OK, nullable=False
     )
+    # Meta's answer when it rejected the token (shown on the tile); cleared on replace.
+    token_error: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
@@ -454,6 +456,7 @@ class ServerEvent(Base):
     __table_args__ = (
         Index("ix_server_events_tenant_event_id", "tenant_id", "event_id"),
         Index("ix_server_events_due", "status", "next_attempt_at"),
+        Index("ix_server_events_tenant_created", "tenant_id", "created_at"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)

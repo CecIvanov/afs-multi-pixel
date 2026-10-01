@@ -4,10 +4,14 @@ import {
   addedAgo,
   canCheckWithMeta,
   isValidPixelId,
+  lastEventLabel,
   marketLabels,
   marketTileState,
   normalizePixelId,
   regionsLabel,
+  serverShare,
+  setupSteps,
+  sparkBars,
   summarizeMarkets,
   tokenRequired,
 } from "./markets.shared.mjs";
@@ -93,4 +97,40 @@ test("Check with Meta needs a valid pixel ID and a token (typed or saved)", () =
   assert.equal(canCheckWithMeta(market(), { pixelId: "1290457710338842", token: " " }), false);
   assert.equal(canCheckWithMeta(market(), { pixelId: "123", token: "EAAJ..." }), false);
   assert.equal(canCheckWithMeta(market({ pixel: pixel() }), { pixelId: "1290457710338842", token: "" }), true);
+});
+
+test("lastEventLabel reads like the prototype", () => {
+  const now = new Date("2026-10-01T12:00:00Z");
+  assert.equal(lastEventLabel(null, now), "No events yet");
+  assert.equal(lastEventLabel("2026-10-01T11:59:50Z", now), "Last event just now");
+  assert.equal(lastEventLabel("2026-10-01T11:58:00Z", now), "Last event 2 min ago");
+  assert.equal(lastEventLabel("2026-10-01T09:00:00Z", now), "Last event 3 h ago");
+});
+
+test("serverShare is the share of Browser Events that reached Meta by server", () => {
+  assert.equal(serverShare({ browser_24h: 0, server_24h: 0 }), "—");
+  assert.equal(serverShare({ browser_24h: 4812, server_24h: 4790 }), "99.5%");
+  assert.equal(serverShare({ browser_24h: 3, server_24h: 3 }), "100%");
+});
+
+test("sparkBars scales the 24 hourly counts into the chart box", () => {
+  const bars = sparkBars([0, 5, 10, ...Array(21).fill(0)], { width: 240, height: 36 });
+  assert.equal(bars.length, 24);
+  assert.equal(bars[2].height, 34); // the tallest bar fills the box minus a margin
+  assert.equal(bars[1].height, 17);
+  assert.equal(bars[0].height, 1); // empty hours still show a hairline
+  assert.equal(bars[1].x, 11);
+});
+
+test("setupSteps: embed, pixels, consent, verified in Meta", () => {
+  const steps = setupSteps({
+    embedActive: true,
+    markets: [market({ pixel: pixel() })],
+    setup: { consent_confirmed: false, verified_in_meta: false },
+  });
+  assert.deepEqual(
+    steps.map((s) => [s.key, s.done]),
+    [["embed", true], ["pixels", true], ["consent", false], ["verified", false]],
+  );
+  assert.equal(setupSteps({ embedActive: null, markets: [], setup: {} })[0].done, false);
 });

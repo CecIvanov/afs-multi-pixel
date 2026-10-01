@@ -130,3 +130,35 @@
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+.spark {
+  width: 100%;
+  height: 36px;
+  display: block;
+}
+
+.strip {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+  background: var(--p-color-bg-surface, #fff);
+  border-radius: 12px;
+  box-shadow: 0 1px 0 rgba(26, 26, 26, 0.07), inset 0 -1px 0 rgba(0, 0, 0, 0.08), inset 0 0 0 1px rgba(0, 0, 0, 0.06);
+  padding: 10px 14px;
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: #f7f7f7;
+  font-weight: 550;
+}
+
+.todo {
+  background: #ffeb78;
+  color: #4f4700;
+}

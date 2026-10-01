@@ -141,14 +141,20 @@ def _handle_token_refresh(db: Session, job: AsyncJob) -> None:
 
 @job_handler(AsyncJobOperation.ORDERS_CREATE)
 def _handle_orders_create(db: Session, job: AsyncJob) -> None:
-    # The Purchase join lands with #9; until then the order is only acknowledged.
-    # Either way no raw order data outlives processing (spec §7).
-    from app.models import WebhookEvent
+    """The order half of the Purchase join. The customer data is hashed into
+    PendingPurchase, then the raw order is wiped from the job and the inbox row
+    (spec §7): no raw order data outlives processing."""
+    from app.models import Tenant, WebhookEvent
+    from app.services.purchase_join import PurchaseJoin
 
+    order = dict(job.payload or {})
+    order.pop("webhook_context", None)
+    tenant = db.get(Tenant, job.tenant_id)
+    if tenant is not None and order:
+        PurchaseJoin(db).record_order(tenant, order)
     job.payload = None
     if job.webhook_event_id and (event := db.get(WebhookEvent, job.webhook_event_id)) is not None:
         event.payload = {}
-    logger.info("job.orders_create.not_joined", {"jobId": str(job.id), "tenantId": str(job.tenant_id)})
 
 
 @job_handler(AsyncJobOperation.MARKETS_SYNC)

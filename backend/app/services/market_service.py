@@ -96,6 +96,7 @@ class PixelView:
     test_event_code: str | None
     token_state: str
     has_token: bool
+    token_error: str | None = None
 
 
 @dataclass(frozen=True)
@@ -213,10 +214,16 @@ class MarketService:
         row.pixel_id = pixel_id
         row.pixel_name = check.pixel_name
         row.test_event_code = (test_event_code or "").strip() or None
-        if (token or "").strip():
+        new_token = bool((token or "").strip())
+        if new_token:
             row.capi_token_encrypted = self._cipher_or_default().encrypt(token_to_use)
         row.token_state = TokenState.OK
+        row.token_error = None
         self.db.add(row)
+        if new_token:
+            from app.services.server_event_sender import resume_paused
+
+            resume_paused(self.db, tenant.id, market_id)
         self.db.commit()
         logger.info("markets.pixel_saved", {"tenantId": str(tenant.id), "marketId": market_id, "pixelId": pixel_id})
         queue_publish(self.db, tenant.id)
@@ -266,6 +273,7 @@ class MarketService:
                 test_event_code=pixel.test_event_code,
                 token_state=pixel.token_state.value,
                 has_token=bool(pixel.capi_token_encrypted),
+                token_error=pixel.token_error,
             ),
         )
 

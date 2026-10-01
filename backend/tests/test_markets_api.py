@@ -89,6 +89,7 @@ def test_save_maps_the_market_and_never_returns_the_token(db, client, fakes):
     assert TOKEN not in response.text
     assert response.json()["pixel"] == {
         "pixel_id": PIXEL, "pixel_name": "Dontmiss BG", "test_event_code": "TEST1", "token_state": "ok", "has_token": True,
+        "token_error": None,
     }
 
 
@@ -137,3 +138,66 @@ def test_remove_unmaps_the_market(db, client, fakes):
 
     assert response.status_code == 200
     assert response.json()["pixel"] is None
+
+
+# --- Relay intake, stats, event log and setup (spec §3.2, §4) ---------------------------
+@pytest.mark.integration
+def test_relay_endpoint_stores_a_valid_relay(db, client, fakes, monkeypatch):
+    from app.config import get_settings
+    from app.services import relay_service
+    from app.services.relay_crypto import relay_key_pair
+
+    monkeypatch.setattr(get_settings(), "token_enc_key", KEY_HEX)
+    monkeypatch.setattr(relay_service, "_LIMITER", relay_service.InMemoryRateLimiter())
+    from tests.test_publishing import CIPHER, browser_envelope
+    from tests.test_relay import _relay, _shop
+
+    _shop(db)
+    body = browser_envelope(relay_key_pair(db, CIPHER).public_key, _relay())
+
+    response = client.post(
+        "/api/v1/internal/relay",
+        json={"body": body, "origin": "https://dontmiss.bg", "ip": "203.0.113.7", "user_agent": "UA"},
+        headers=INTERNAL_HEADERS,
+    )
+
+    assert response.status_code == 200 and response.json() == {"outcome": "stored"}
+
+
+@pytest.mark.integration
+def test_markets_listing_carries_counts_summary_and_setup(db, client, fakes):
+    from tests.test_relay import _receive, _shop
+
+    _shop(db)
+    _receive(db)
+
+    body = client.get(BASE, headers=INTERNAL_HEADERS).json()
+
+    bg = next(m for m in body["markets"] if m["shopify_market_id"] == 101)
+    assert bg["stats"]["browser"] == 1 and len(bg["stats"]["series"]) == 24
+    assert body["summary"] == {"browser_24h": 1, "server_24h": 0}
+    assert body["setup"] == {"consent_confirmed": False, "verified_in_meta": False}
+
+
+@pytest.mark.integration
+def test_the_merchant_confirms_setup_steps(db, client, fakes):
+    _tenant(db)
+
+    response = client.post(f"/api/v1/internal/tenants/by-shop/{SHOP}/setup", json={"verified_in_meta": True},
+                           headers=INTERNAL_HEADERS)
+
+    assert response.json() == {"consent_confirmed": False, "verified_in_meta": True}
+
+
+@pytest.mark.integration
+def test_event_log_endpoint_filters_by_market(db, client, fakes):
+    from tests.test_relay import _receive, _relay, _shop
+
+    _shop(db)
+    _receive(db, _relay(eventId="a"))
+    _receive(db, _relay(eventId="b", marketId="102"))
+
+    rows = client.get(f"/api/v1/internal/tenants/by-shop/{SHOP}/events", params={"market_id": 101},
+                      headers=INTERNAL_HEADERS).json()["events"]
+
+    assert [(r["event_id"], r["sent_as"], r["status"]) for r in rows] == [("a", "Server", "received")]

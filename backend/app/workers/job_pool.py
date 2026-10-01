@@ -30,6 +30,7 @@ class JobPoolRunner:
         self.idle_poll_seconds = s.job_idle_poll_seconds
         self.stale_processing_seconds = s.job_stale_processing_seconds
         self.reap_interval_seconds = s.job_reap_interval_seconds
+        self.server_event_poll_seconds = s.server_event_poll_seconds
         self.worker_id = default_worker_id()
         self._shutdown = threading.Event()
 
@@ -61,12 +62,31 @@ class JobPoolRunner:
             finally:
                 db.close()
 
+    def _server_event_loop(self) -> None:
+        """Send due Server Events to the Conversions API (spec §3.2 step 3). Drains
+        a full batch at once; idles between polls when nothing is due."""
+        from app.services.server_event_sender import ServerEventSender
+
+        while not self._shutdown.is_set():
+            db = SessionLocal()
+            handled = 0
+            try:
+                handled = ServerEventSender(db).send_due()
+            except Exception as exc:  # noqa: BLE001 — the sender must never die
+                logger.error("job_pool.server_events_failed", exc)
+                db.rollback()
+            finally:
+                db.close()
+            if not handled and self._shutdown.wait(timeout=self.server_event_poll_seconds):
+                return
+
     def run(self) -> None:
         logger.info("job_pool.started", {"poolSize": self.pool_size, "workerId": self.worker_id})
         self._reap_stale_jobs()  # startup reap
         last_reap = time.monotonic()
-        with ThreadPoolExecutor(max_workers=self.pool_size, thread_name_prefix="jobslot") as pool:
+        with ThreadPoolExecutor(max_workers=self.pool_size + 1, thread_name_prefix="jobslot") as pool:
             futures = [pool.submit(self._worker_loop, i) for i in range(self.pool_size)]
+            futures.append(pool.submit(self._server_event_loop))
             while not self._shutdown.is_set():
                 if time.monotonic() - last_reap >= self.reap_interval_seconds:
                     self._reap_stale_jobs()
