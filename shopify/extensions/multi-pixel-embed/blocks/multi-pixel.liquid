@@ -1,0 +1,60 @@
+{%- comment -%}
+  AFS Multi Pixel theme app embed (spec §3.1). Resolves the shopper's Market with
+  Liquid localization.market (a known deprecated dependency, ADR 0001), looks up its
+  Market Pixel in the app-owned metafield multi_pixel.mapping (written by the app:
+  pixels, the Relay public key and endpoint) and hands it all to multi-pixel.js.
+{%- endcomment -%}
+{%- liquid
+  assign config = app.metafields.multi_pixel.mapping.value
+  assign market_id = localization.market.id | append: ''
+  assign pixel_id = config.pixels[market_id]
+  assign variant = product.selected_or_first_available_variant
+-%}
+<script id="afs-multi-pixel-config" type="application/json">
+  {
+    "shop": {{ shop.permanent_domain | json }},
+    "marketId": {{ market_id | json }},
+    "pixelId": {{ pixel_id | json }},
+    "endpoint": {{ config.endpoint | json }},
+    "publicKey": {{ config.publicKey | json }},
+    "currency": {{ cart.currency.iso_code | json }},
+    "template": {{ template.name | json }},
+    {%- if template.name == 'product' and product -%}
+    "product": {
+      "id": {{ product.id | json }},
+      "name": {{ product.title | json }},
+      "type": {{ product.type | json }},
+      "price": {{ variant.price | divided_by: 100.0 | json }}
+    },
+    {%- else -%}
+    "product": null,
+    {%- endif -%}
+    {%- if template.name == 'cart' -%}
+    "cart": {
+      "productIds": {{ cart.items | map: 'product_id' | uniq | json }},
+      "value": {{ cart.total_price | divided_by: 100.0 | json }},
+      "numItems": {{ cart.item_count | json }}
+    },
+    {%- else -%}
+    "cart": null,
+    {%- endif -%}
+    {%- if template.name == 'collection' and collection -%}
+    "collection": {
+      "name": {{ collection.title | json }},
+      "productIds": {{ collection.products | map: 'id' | json }}
+    },
+    {%- else -%}
+    "collection": null,
+    {%- endif -%}
+    "searchTerms": {% if template.name == 'search' %}{{ search.terms | json }}{% else %}null{% endif %}
+  }
+</script>
+<script src="{{ 'multi-pixel.js' | asset_url }}" defer></script>
+
+{% schema %}
+{
+  "name": "AFS Multi Pixel",
+  "target": "head",
+  "settings": []
+}
+{% endschema %}

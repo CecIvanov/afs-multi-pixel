@@ -19,7 +19,7 @@
     "deploy:prd": "shopify app deploy --config shopify.app.prd.toml",
     "prisma": "prisma",
     "typecheck": "react-router typegen && tsc --noEmit",
-    "test": "node --test 'app/**/*.test.mjs' 'scripts/**/*.test.mjs'",
+    "test": "node --test 'app/**/*.test.mjs' 'scripts/**/*.test.mjs' 'extensions/**/*.test.mjs'",
     "lint": "eslint --cache ."
   },
   "dependencies": {
@@ -47,5 +47,7 @@
     "typescript": "^5.9.3",
     "vite": "^6.3.6"
   },
-  "workspaces": []
+  "workspaces": [
+    "extensions/*"
+  ]
 }

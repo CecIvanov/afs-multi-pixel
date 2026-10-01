@@ -1,0 +1,10 @@
+{
+  "name": "multi-pixel-checkout",
+  "private": true,
+  "version": "1.0.0",
+  "main": "dist/main.js",
+  "license": "UNLICENSED",
+  "dependencies": {
+    "@shopify/web-pixels-extension": "^2.18.0"
+  }
+}

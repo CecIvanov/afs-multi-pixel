@@ -8,6 +8,8 @@ WORKDIR /workspace
 COPY packages/logger ./packages/logger
 
 COPY shopify/package.json shopify/package-lock.json* ./shopify/
+# npm workspaces (the extensions) must be present for the lockfile install.
+COPY shopify/extensions/multi-pixel-checkout/package.json ./shopify/extensions/multi-pixel-checkout/
 WORKDIR /workspace/shopify
 RUN npm install
 
@@ -22,6 +24,7 @@ WORKDIR /app
 # packages/logger is bundled into build/ at compile time, so the runtime image
 # only needs the app's own production deps.
 COPY shopify/package.json shopify/package-lock.json* ./
+COPY shopify/extensions/multi-pixel-checkout/package.json ./extensions/multi-pixel-checkout/
 RUN npm install --omit=dev && npm cache clean --force
 
 COPY --from=build /workspace/shopify/build ./build

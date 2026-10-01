@@ -1,0 +1,30 @@
+type = "web_pixel_extension"
+name = "multi-pixel-checkout"
+runtime_context = "strict"
+
+# Shopify runs the pixel only when the shopper allows marketing and the sale of
+# data (spec §3.1): no event without consent.
+[customer_privacy]
+analytics = false
+marketing = true
+preferences = false
+sale_of_data = "enabled"
+
+# Written by the app (backend/app/services/storefront_publisher.py).
+[settings]
+type = "object"
+
+[settings.fields.mapping]
+name = "Pixel Mapping"
+description = "JSON object of numeric Shopify Market ID to Meta pixel ID. Written by the app."
+type = "single_line_text_field"
+
+[settings.fields.publicKey]
+name = "Relay public key"
+description = "Base64 SPKI RSA public key for the encrypted Relay. Written by the app."
+type = "single_line_text_field"
+
+[settings.fields.endpoint]
+name = "Relay endpoint"
+description = "The app URL that receives Relays. Written by the app."
+type = "single_line_text_field"
