@@ -1,0 +1,33 @@
+# Secrets — only the .example twins are committed
+.credentials.*
+!.credentials.example
+!.credentials.*.example
+
+# Per-stack env files — only the .example twins are committed
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+# Node
+node_modules/
+shopify/build/
+shopify/.react-router/
+shopify/.shopify/
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Build / test artifacts
+dist/
+coverage/
+test-results/
+playwright-report/
+e2e-ui/storageState.json
+
+# OS / editor
+.DS_Store
+*.log

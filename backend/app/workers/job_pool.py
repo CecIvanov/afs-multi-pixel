@@ -1,0 +1,94 @@
+"""Durable job queue worker — a slot-refill ThreadPool that claims and processes
+jobs, plus a stale-processing reaper. Runs as its own container:
+
+    python -m app.workers.job_pool
+
+Kept SEPARATE from Celery (which is cron/fan-out only): this owns per-tenant
+fairness, priority, DB-level dedup, and crash recovery.
+"""
+
+from __future__ import annotations
+
+import signal
+import threading
+import time
+from concurrent.futures import ThreadPoolExecutor, wait
+
+from app.config import get_settings
+from app.db.session import SessionLocal
+from app.logging_config import configure_logging, get_logger
+from app.services.async_job_service import AsyncJobService, default_worker_id
+
+configure_logging(component="job_pool")
+logger = get_logger().child({"component": "job_pool"})
+
+
+class JobPoolRunner:
+    def __init__(self) -> None:
+        s = get_settings()
+        self.pool_size = s.job_pool_size
+        self.idle_poll_seconds = s.job_idle_poll_seconds
+        self.stale_processing_seconds = s.job_stale_processing_seconds
+        self.reap_interval_seconds = s.job_reap_interval_seconds
+        self.worker_id = default_worker_id()
+        self._shutdown = threading.Event()
+
+    def _reap_stale_jobs(self) -> None:
+        db = SessionLocal()
+        try:
+            AsyncJobService(db).reclaim_stale_processing_jobs(self.stale_processing_seconds)
+        except Exception as exc:  # noqa: BLE001 — reaper must never take the pool down
+            logger.error("job_pool.reap_failed", exc)
+        finally:
+            db.close()
+
+    def _worker_loop(self, slot: int) -> None:
+        while not self._shutdown.is_set():
+            db = SessionLocal()
+            try:
+                job = AsyncJobService(db).claim_next(self.worker_id)
+                if job is None:
+                    db.close()
+                    if self._shutdown.wait(timeout=self.idle_poll_seconds):
+                        return
+                    continue
+                job_id = job.id
+                AsyncJobService(db).process_job(job_id)
+            except Exception as exc:  # noqa: BLE001 — a slot must never die
+                logger.error("job_pool.slot_failed", exc, {"slot": slot})
+                db.rollback()
+                self._shutdown.wait(timeout=1.0)
+            finally:
+                db.close()
+
+    def run(self) -> None:
+        logger.info("job_pool.started", {"poolSize": self.pool_size, "workerId": self.worker_id})
+        self._reap_stale_jobs()  # startup reap
+        last_reap = time.monotonic()
+        with ThreadPoolExecutor(max_workers=self.pool_size, thread_name_prefix="jobslot") as pool:
+            futures = [pool.submit(self._worker_loop, i) for i in range(self.pool_size)]
+            while not self._shutdown.is_set():
+                if time.monotonic() - last_reap >= self.reap_interval_seconds:
+                    self._reap_stale_jobs()
+                    last_reap = time.monotonic()
+                self._shutdown.wait(timeout=1.0)
+            wait(futures, timeout=30)
+        logger.info("job_pool.stopped", {})
+
+    def stop(self) -> None:
+        self._shutdown.set()
+
+
+def main() -> None:
+    runner = JobPoolRunner()
+
+    def handle_stop(*_args: object) -> None:
+        runner.stop()
+
+    signal.signal(signal.SIGTERM, handle_stop)
+    signal.signal(signal.SIGINT, handle_stop)
+    runner.run()
+
+
+if __name__ == "__main__":
+    main()

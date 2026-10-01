@@ -1,0 +1,46 @@
+.fab {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 520;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  border-radius: 999px;
+  background: #7360f2; /* Viber purple */
+  color: #fff;
+  font: 600 14px/1 Inter, system-ui, sans-serif;
+  text-decoration: none;
+  box-shadow: 0 6px 20px rgba(115, 96, 242, 0.4);
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+
+.fab:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 26px rgba(115, 96, 242, 0.5);
+}
+
+.fab:focus-visible {
+  outline: 3px solid #fff;
+  outline-offset: 2px;
+}
+
+.icon {
+  width: 20px;
+  height: 20px;
+  flex: none;
+}
+
+.label {
+  white-space: nowrap;
+}
+
+@media (max-width: 480px) {
+  .label {
+    display: none; /* icon-only on narrow screens */
+  }
+  .fab {
+    padding: 12px;
+  }
+}

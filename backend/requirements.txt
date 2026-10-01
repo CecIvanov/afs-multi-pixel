@@ -1,0 +1,12 @@
+fastapi>=0.115.0
+uvicorn[standard]>=0.32.0
+sqlalchemy>=2.0.36,<2.1  # 2.1 defaults postgresql:// to psycopg 3; we ship psycopg2
+alembic>=1.14.0
+psycopg2-binary>=2.9.10
+pydantic>=2.9.0
+pydantic-settings>=2.6.0
+httpx>=0.28.0
+celery>=5.4.0
+redis>=5.2.0
+prometheus-client>=0.21.0
+pytest>=8.3.0

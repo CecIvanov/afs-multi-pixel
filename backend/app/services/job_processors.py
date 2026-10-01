@@ -1,0 +1,131 @@
+"""Operation -> handler registry for the durable job queue.
+
+Register a handler with @job_handler(AsyncJobOperation.X); dispatch_job looks it
+up. A handler raising propagates to AsyncJobService._retry_or_fail (retry/backoff
+/ dead-letter). Add your app's operations + handlers here.
+"""
+
+from __future__ import annotations
+
+from typing import Callable
+
+from sqlalchemy.orm import Session
+
+from app.logging_config import get_logger
+from app.models import AsyncJob, AsyncJobOperation
+
+logger = get_logger().child({"component": "job_processors"})
+
+JobHandler = Callable[[Session, AsyncJob], None]
+_REGISTRY: dict[AsyncJobOperation, JobHandler] = {}
+
+
+def job_handler(operation: AsyncJobOperation) -> Callable[[JobHandler], JobHandler]:
+    def register(fn: JobHandler) -> JobHandler:
+        _REGISTRY[operation] = fn
+        return fn
+
+    return register
+
+
+def dispatch_job(db: Session, job: AsyncJob) -> None:
+    handler = _REGISTRY.get(job.operation)
+    if handler is None:
+        raise ValueError(f"No handler registered for operation {job.operation.value}")
+    handler(db, job)
+
+
+def _shop_domain(db: Session, job: AsyncJob) -> str:
+    from app.models import Tenant
+
+    tenant = db.get(Tenant, job.tenant_id)
+    return tenant.shop_domain if tenant else ""
+
+
+# --- handlers ---------------------------------------------------------------
+@job_handler(AsyncJobOperation.APP_UNINSTALL)
+def _handle_app_uninstall(db: Session, job: AsyncJob) -> None:
+    from app.services.async_job_service import AsyncJobService
+    from app.services.tenant_service import TenantService
+
+    # Drop this tenant's other pending jobs so a dead tenant can't hold slots.
+    AsyncJobService(db).purge_tenant_active_jobs(job.tenant_id)
+    TenantService(db).sync_shopify_uninstall(_shop_domain(db, job))
+
+
+@job_handler(AsyncJobOperation.SHOP_REDACT)
+def _handle_shop_redact(db: Session, job: AsyncJob) -> None:
+    from app.services.compliance_service import ComplianceService
+
+    ComplianceService(db).redact_shop_data(_shop_domain(db, job))
+
+
+@job_handler(AsyncJobOperation.CUSTOMER_DATA_REQUEST)
+def _handle_customer_data_request(db: Session, job: AsyncJob) -> None:
+    from app.services.compliance_service import ComplianceService
+
+    payload = job.payload or {}
+    customer = payload.get("customer") or {}
+    ComplianceService(db).export_customer_data(
+        shop_domain=_shop_domain(db, job),
+        shopify_customer_id=customer.get("id"),
+        customer_email=customer.get("email"),
+    )
+
+
+@job_handler(AsyncJobOperation.CUSTOMER_REDACT)
+def _handle_customer_redact(db: Session, job: AsyncJob) -> None:
+    from app.services.compliance_service import ComplianceService
+
+    payload = job.payload or {}
+    customer = payload.get("customer") or {}
+    ComplianceService(db).redact_customer_data(
+        shop_domain=_shop_domain(db, job),
+        shopify_customer_id=customer.get("id"),
+        customer_email=customer.get("email"),
+    )
+
+
+@job_handler(AsyncJobOperation.SCOPES_UPDATE)
+def _handle_scopes_update(db: Session, job: AsyncJob) -> None:
+    from app.services.tenant_service import TenantService
+
+    ctx = (job.payload or {}).get("webhook_context") or {}
+    access_token = ctx.get("access_token")
+    if not access_token:
+        return  # nothing to persist without the session token
+    TenantService(db).sync_shopify_session(
+        _shop_domain(db, job),
+        access_token=access_token,
+        scopes=ctx.get("scopes"),
+        refresh_token=ctx.get("refresh_token"),
+    )
+
+
+@job_handler(AsyncJobOperation.SHOP_INFO_FETCH)
+def _handle_shop_info_fetch(db: Session, job: AsyncJob) -> None:
+    from app.models import Tenant
+    from app.services.shopify_shop_info_service import execute_shop_info_fetch_for_tenant
+
+    tenant = db.get(Tenant, job.tenant_id)
+    if tenant is not None:
+        execute_shop_info_fetch_for_tenant(db, tenant)
+
+
+@job_handler(AsyncJobOperation.TOKEN_REFRESH)
+def _handle_token_refresh(db: Session, job: AsyncJob) -> None:
+    """Refresh a tenant's expiring Shopify offline token. Enqueued proactively by
+    the beat (before expiry) and reactively on a 401. A dead refresh chain marks
+    the tenant revoked and raises (retry/backoff finds nothing left to do)."""
+    from app.models import Tenant
+    from app.services.shopify_token_refresh_service import ShopifyTokenRefreshService
+
+    tenant = db.get(Tenant, job.tenant_id)
+    if tenant is None:
+        return
+    ShopifyTokenRefreshService(db).refresh_tenant_tokens(tenant, reason=job.topic or "token_refresh")
+
+
+@job_handler(AsyncJobOperation.EXAMPLE_OP)
+def _handle_example(db: Session, job: AsyncJob) -> None:
+    logger.info("job.example", {"jobId": str(job.id), "tenantId": str(job.tenant_id)})

@@ -1,0 +1,56 @@
+# Shopify app configuration (base). Per-environment copies (shopify.app.dev.toml,
+# .prod.toml) are linked with: shopify app config link --config shopify.app.<env>.toml
+#
+# client_id + application_url are filled in when you create the Partner app and run
+# `shopify app config link`. Keep `api_version` in sync with app.config.json's
+# shopify.apiVersion (a guard test — Phase 4 — enforces this).
+
+client_id = ""
+name = "AFS Multi Pixel"
+handle = "afs-multi-pixel"
+application_url = "https://example.com/app"
+embedded = true
+
+[access_scopes]
+# Start minimal. Add scopes here AND in the SCOPES env var (they must match).
+scopes = "write_products"
+
+[auth]
+redirect_urls = [ "https://example.com/auth/callback" ]
+
+[webhooks]
+api_version = "2025-10"
+
+  # App lifecycle
+  [[webhooks.subscriptions]]
+  topics = ["app/uninstalled"]
+  uri = "/webhooks/app/uninstalled"
+
+  [[webhooks.subscriptions]]
+  topics = ["app/scopes_update"]
+  uri = "/webhooks/app/scopes_update"
+
+  [[webhooks.subscriptions]]
+  topics = ["app_subscriptions/update"]
+  uri = "/webhooks/app/subscriptions/update"
+
+  # Mandatory GDPR compliance topics for public apps.
+  [[webhooks.subscriptions]]
+  compliance_topics = ["customers/data_request"]
+  uri = "/webhooks/customers/data_request"
+
+  [[webhooks.subscriptions]]
+  compliance_topics = ["customers/redact"]
+  uri = "/webhooks/customers/redact"
+
+  [[webhooks.subscriptions]]
+  compliance_topics = ["shop/redact"]
+  uri = "/webhooks/shop/redact"
+
+  # Example domain topic (uncomment + add a webhooks.orders.tsx route to use):
+  # [[webhooks.subscriptions]]
+  # topics = ["orders/create"]
+  # uri = "/webhooks/orders"
+
+[build]
+automatically_update_urls_on_dev = false

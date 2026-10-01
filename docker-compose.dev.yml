@@ -1,0 +1,15 @@
+# Development overlay — used by `./scripts/start.sh dev` with .env.dev.
+# The base compose already runs Postgres + Redis as containers, so dev is
+# self-contained. Add source-mount / hot-reload here later if desired.
+
+services:
+  api:
+    restart: unless-stopped
+  worker:
+    restart: unless-stopped
+  beat:
+    restart: unless-stopped
+  jobs:
+    restart: unless-stopped
+  ui:
+    restart: unless-stopped

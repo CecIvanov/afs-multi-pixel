@@ -1,0 +1,48 @@
+# PRODUCTION — a SEPARATE Shopify app (own client_id, URL, database, backend stack).
+# Link it: cd shopify && shopify app config link --config shopify.app.prd.toml
+# Deploy:  npm run deploy:prd
+#
+# Keep [access_scopes] and [webhooks] identical to shopify.app.toml — Shopify reads
+# each toml standalone, so scope/webhook changes must be mirrored across all envs.
+
+client_id = ""
+name = "AFS Multi Pixel"
+handle = "afs-multi-pixel-prd"
+application_url = "https://app.example.com/app"
+embedded = true
+
+[access_scopes]
+scopes = "write_products"
+
+[auth]
+redirect_urls = [ "https://app.example.com/auth/callback" ]
+
+[webhooks]
+api_version = "2025-10"
+
+  [[webhooks.subscriptions]]
+  topics = ["app/uninstalled"]
+  uri = "/webhooks/app/uninstalled"
+
+  [[webhooks.subscriptions]]
+  topics = ["app/scopes_update"]
+  uri = "/webhooks/app/scopes_update"
+
+  [[webhooks.subscriptions]]
+  topics = ["app_subscriptions/update"]
+  uri = "/webhooks/app/subscriptions/update"
+
+  [[webhooks.subscriptions]]
+  compliance_topics = ["customers/data_request"]
+  uri = "/webhooks/customers/data_request"
+
+  [[webhooks.subscriptions]]
+  compliance_topics = ["customers/redact"]
+  uri = "/webhooks/customers/redact"
+
+  [[webhooks.subscriptions]]
+  compliance_topics = ["shop/redact"]
+  uri = "/webhooks/shop/redact"
+
+[build]
+automatically_update_urls_on_dev = false

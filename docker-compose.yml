@@ -1,0 +1,194 @@
+# Base stack: postgres + redis + api + worker + beat + ui.
+#
+# Identity is interpolated from environment exported by scripts/lib/config.sh out
+# of app.config.json (APP_IMAGE_PREFIX, DB_NAME, DB_USER, APP_CELERY_KEY_PREFIX)
+# plus .env.<stack> / .credentials.<stack>. Bring it up with ./scripts/start-dev.sh.
+#
+# Postgres and Redis run as containers here for a self-contained dev/test stack.
+# For production you may externalize them (host Postgres via host.docker.internal,
+# a shared Redis) — see docker-compose.prod.yml and the README.
+name: ${APP_IMAGE_PREFIX:-afsmultipixel}-${APP_ENV:-dev}
+
+x-backend-image: &backend-image
+  image: ${APP_IMAGE_PREFIX:-afsmultipixel}/api:${APP_ENV:-dev}
+  build:
+    context: .
+    dockerfile: backend/Dockerfile
+
+x-backend-env: &backend-env
+  APP_ENV: ${APP_ENV:-dev}
+  APP_NAME: ${APP_NAME:-}
+  LOG_LEVEL: ${LOG_LEVEL:-info}
+  DATABASE_URL: postgresql://${DB_USER:-afsmultipixel_dev}:${DATABASE_PASSWORD:-test123}@postgres:5432/${DB_NAME:-afsmultipixel_dev}
+  REDIS_URL: redis://redis:6379/0
+  CELERY_TASK_QUEUE: ${APP_CELERY_KEY_PREFIX:-afsmultipixel}-${APP_ENV:-dev}
+  CELERY_REDIS_KEY_PREFIX: "${APP_CELERY_KEY_PREFIX:-afsmultipixel}-${APP_ENV:-dev}:"
+  INTERNAL_API_KEY: ${INTERNAL_API_KEY:-dev-internal-key}
+  BILLING_ENFORCEMENT_ENABLED: ${BILLING_ENFORCEMENT_ENABLED:-true}
+  # Shopify app credentials — the backend needs these to refresh expiring offline
+  # tokens (grant_type=refresh_token) from the beat + job pool, independently of
+  # the Node BFF. Sourced from .credentials.<stack>.
+  SHOPIFY_API_KEY: ${SHOPIFY_API_KEY:-}
+  SHOPIFY_API_SECRET: ${SHOPIFY_API_SECRET:-}
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: ${APP_IMAGE_PREFIX:-afsmultipixel}-postgres-${APP_ENV:-dev}
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER:-afsmultipixel_dev}
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD:-test123}
+      POSTGRES_DB: ${DB_NAME:-afsmultipixel_dev}
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-afsmultipixel_dev} -d ${DB_NAME:-afsmultipixel_dev}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  redis:
+    image: redis:7-alpine
+    container_name: ${APP_IMAGE_PREFIX:-afsmultipixel}-redis-${APP_ENV:-dev}
+    restart: unless-stopped
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  api:
+    <<: *backend-image
+    container_name: ${APP_IMAGE_PREFIX:-afsmultipixel}-api-${APP_ENV:-dev}
+    restart: unless-stopped
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "${API_WORKERS:-1}", "--no-access-log"]
+    environment:
+      <<: *backend-env
+      PROMETHEUS_MULTIPROC_DIR: /tmp/prometheus_multiproc
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${API_PORT:-8000}:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health')"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  worker:
+    <<: *backend-image
+    container_name: ${APP_IMAGE_PREFIX:-afsmultipixel}-worker-${APP_ENV:-dev}
+    restart: unless-stopped
+    # Celery prefork has no HTTP server, so run the /metrics sidecar alongside it.
+    command:
+      - sh
+      - -ec
+      - |
+        python -m app.workers.worker_metrics_sidecar &
+        exec celery -A app.workers.celery_app.celery_app worker -l info -Q ${APP_CELERY_KEY_PREFIX:-afsmultipixel}-${APP_ENV:-dev}
+    environment:
+      <<: *backend-env
+      RUN_DB_MIGRATIONS: "false"
+      WORKER_METRICS_PORT: "9100"
+      PROMETHEUS_MULTIPROC_DIR: /tmp/prometheus_multiproc
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${WORKER_METRICS_PORT:-9100}:9100"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; assert b'app_' in urllib.request.urlopen('http://127.0.0.1:9100/metrics', timeout=3).read()"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+
+  beat:
+    <<: *backend-image
+    container_name: ${APP_IMAGE_PREFIX:-afsmultipixel}-beat-${APP_ENV:-dev}
+    restart: unless-stopped
+    command: ["celery", "-A", "app.workers.celery_app.celery_app", "beat", "-l", "info"]
+    environment:
+      <<: *backend-env
+      RUN_DB_MIGRATIONS: "false"
+    depends_on:
+      api:
+        condition: service_healthy
+
+  # Durable job-queue worker (webhook processing). Separate from Celery.
+  jobs:
+    <<: *backend-image
+    container_name: ${APP_IMAGE_PREFIX:-afsmultipixel}-jobs-${APP_ENV:-dev}
+    restart: unless-stopped
+    command: ["python", "-m", "app.workers.job_pool"]
+    environment:
+      <<: *backend-env
+      RUN_DB_MIGRATIONS: "false"
+    depends_on:
+      api:
+        condition: service_healthy
+
+  ui:
+    image: ${APP_IMAGE_PREFIX:-afsmultipixel}/ui:${APP_ENV:-dev}
+    build:
+      context: .
+      dockerfile: shopify/Dockerfile
+    container_name: ${APP_IMAGE_PREFIX:-afsmultipixel}-ui-${APP_ENV:-dev}
+    restart: unless-stopped
+    environment:
+      APP_ENV: ${APP_ENV:-dev}
+      APP_NAME: ${APP_NAME:-}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      NODE_ENV: production
+      # Node -> Python BFF
+      BACKEND_INTERNAL_URL: http://api:8000
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY:-dev-internal-key}
+      # Prisma (Shopify session storage) shares the same Postgres.
+      DATABASE_URL: postgresql://${DB_USER:-afsmultipixel_dev}:${DATABASE_PASSWORD:-test123}@postgres:5432/${DB_NAME:-afsmultipixel_dev}
+      # Shopify app credentials (from the Partner Dashboard) — required to serve
+      # the embedded admin. SCOPES must match shopify.app.toml.
+      SHOPIFY_API_KEY: ${SHOPIFY_API_KEY:-}
+      SHOPIFY_API_SECRET: ${SHOPIFY_API_SECRET:-}
+      SHOPIFY_APP_URL: ${SHOPIFY_APP_URL:-}
+      SCOPES: ${SCOPES:-write_products}
+      SHOPIFY_APP_DISTRIBUTION: ${SHOPIFY_APP_DISTRIBUTION:-AppStore}
+      PRIVACY_POLICY_URL: ${PRIVACY_POLICY_URL:-}
+      # Support / Help (from app.config.json support block via scripts/lib/config.sh).
+      SUPPORT_EMAIL: ${SUPPORT_EMAIL:-}
+      SUPPORT_VIBER_ENABLED: ${SUPPORT_VIBER_ENABLED:-false}
+      SUPPORT_VIBER_NUMBER: ${SUPPORT_VIBER_NUMBER:-}
+      SUPPORT_VIBER_DISPLAY: ${SUPPORT_VIBER_DISPLAY:-}
+      SUPPORT_VIBER_LABEL: ${SUPPORT_VIBER_LABEL:-Chat on Viber}
+      # Billing (managed pricing). APP_HANDLE is derived from app.config.json.
+      SHOPIFY_APP_HANDLE: ${SHOPIFY_APP_HANDLE:-${APP_HANDLE:-}}
+      SHOPIFY_BILLING_MODE: ${SHOPIFY_BILLING_MODE:-managed}
+      # Partner API (managed-pricing reconcile) — optional in dev.
+      SHOPIFY_APP_GID: ${SHOPIFY_APP_GID:-}
+      SHOPIFY_PARTNER_ORG_ID: ${SHOPIFY_PARTNER_ORG_ID:-}
+      SHOPIFY_PARTNER_ACCESS_TOKEN: ${SHOPIFY_PARTNER_ACCESS_TOKEN:-}
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${UI_PORT:-3000}:3000"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 40s
+
+volumes:
+  pgdata:
+    name: ${APP_IMAGE_PREFIX:-afsmultipixel}-pgdata-${APP_ENV:-dev}
+  redisdata:
+    name: ${APP_IMAGE_PREFIX:-afsmultipixel}-redisdata-${APP_ENV:-dev}

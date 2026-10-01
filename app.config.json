@@ -1,0 +1,74 @@
+{
+  "app": {
+    "name": "AFS Multi Pixel",
+    "handle": "afs-multi-pixel",
+    "slug": "afsmultipixel",
+    "supportEmail": "support@example.com",
+    "primaryLocale": "en",
+    "privacyPolicyUrl": "https://example.com/privacy",
+    "termsUrl": "https://example.com/terms"
+  },
+  "identifiers": {
+    "_comment": "Derived from app.slug by default. Only override if you must avoid a name collision on a shared host. These drive Docker image tags, container names, the shared network, the Celery/Redis key prefix and the database name — i.e. everything that keeps stacks isolated on one machine.",
+    "imagePrefix": "afsmultipixel",
+    "sharedNetwork": "afsmultipixel-shared",
+    "celeryKeyPrefix": "afsmultipixel",
+    "databaseNamePrefix": "afsmultipixel",
+    "databaseUserPrefix": "afsmultipixel",
+    "testDbSentinel": "afsmultipixel_test"
+  },
+  "support": {
+    "_comment": "Support channels shown on the Help page. The Viber floating button is opt-in: set viber.enabled true and a real number to show it on every admin screen.",
+    "email": "support@example.com",
+    "viber": {
+      "enabled": false,
+      "numberE164": "15550000000",
+      "display": "+1 555 000 0000",
+      "label": "Chat on Viber"
+    }
+  },
+  "shopify": {
+    "apiVersion": "2025-10",
+    "scopes": [
+      "write_products"
+    ],
+    "appProxy": {
+      "enabled": false,
+      "subpath": "myapp"
+    }
+  },
+  "billing": {
+    "_comment": "mode = managed | api | disabled. Under 'managed', plans live in the Partner Dashboard and this catalog is the local mirror (handles + ranks + entitlements). 'shopifyPlanName' must match the Partner-Dashboard plan name so it normalizes back to the handle.",
+    "mode": "managed",
+    "trialDays": 7,
+    "freePlanHandle": "free",
+    "topPlanHandle": "pro",
+    "plans": [
+      {
+        "handle": "free",
+        "name": "Free",
+        "rank": 0,
+        "shopifyPlanName": null,
+        "monthlyQuota": 50,
+        "features": []
+      },
+      {
+        "handle": "pro",
+        "name": "Pro",
+        "rank": 10,
+        "shopifyPlanName": "Pro",
+        "monthlyQuota": null,
+        "features": [
+          "example_premium_feature"
+        ]
+      }
+    ]
+  },
+  "featureFlags": {
+    "_comment": "Per-tenant flags, default off. Ship the framework with one example; each app adds its own keys.",
+    "example_feature": {
+      "default": false,
+      "description": "Example dark-launch flag."
+    }
+  }
+}

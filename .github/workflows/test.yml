@@ -1,0 +1,57 @@
+name: test
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: test123
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Python deps
+        run: pip install -r backend/requirements.txt
+
+      - name: Install Node deps
+        working-directory: shopify
+        run: npm ci || npm install
+
+      - name: Typecheck + build (Node)
+        working-directory: shopify
+        run: |
+          npm run typecheck
+          npm run build
+
+      - name: Create test database
+        run: |
+          SLUG=$(node -p "require('./app.config.json').app.slug")
+          DB="${SLUG}_test"
+          PGPASSWORD=test123 psql -h localhost -U postgres -c "CREATE DATABASE \"${DB}\";"
+          echo "TEST_DATABASE_URL=postgresql://postgres:test123@localhost:5432/${DB}" >> "$GITHUB_ENV"
+
+      - name: Run tests (migrations + pytest + node --test + guards)
+        run: ./scripts/run-tests.sh

@@ -1,0 +1,16 @@
+# UAT overlay — a SEPARATE stack from dev and prd. Used by ./scripts/start.sh uat
+# with .env.uat + .credentials.uat. Container names, images, database, volumes and
+# the compose project are all suffixed with the env (APP_ENV=uat) so it coexists
+# with the dev and prd stacks on one host — as long as .env.uat uses distinct ports.
+
+services:
+  api:
+    restart: unless-stopped
+  worker:
+    restart: unless-stopped
+  beat:
+    restart: unless-stopped
+  jobs:
+    restart: unless-stopped
+  ui:
+    restart: unless-stopped

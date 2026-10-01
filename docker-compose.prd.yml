@@ -1,0 +1,21 @@
+# PRODUCTION overlay — a SEPARATE stack from dev and uat. Used by
+# ./scripts/start.sh prd with .env.prd + .credentials.prd.
+#
+# For a real deployment you will typically:
+#   - externalize Postgres (host DB via host.docker.internal + pg_hba, or a managed
+#     DB) instead of the `postgres` container — override DATABASE_URL and drop the
+#     postgres service via a profiles split;
+#   - point every service at a shared Redis (unique CELERY_REDIS_KEY_PREFIX per env);
+#   - terminate TLS at a reverse proxy (Caddy) and keep all ports on 127.0.0.1.
+
+services:
+  api:
+    restart: always
+  worker:
+    restart: always
+  beat:
+    restart: always
+  jobs:
+    restart: always
+  ui:
+    restart: always

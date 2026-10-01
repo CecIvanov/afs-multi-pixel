@@ -1,9 +1,0 @@
-.cache
-build
-node_modules
-.env
-.env.*
-!.env.example
-!.env.docker.example
-prisma/dev.sqlite*
-.shopify
