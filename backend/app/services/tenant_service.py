@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.logging_config import get_logger
-from app.models import BillingPlan, MarketPixel, SubscriptionStatus, Tenant, TenantStatus, TenantSubscription
+from app.models import AsyncJobOperation, BillingPlan, MarketPixel, SubscriptionStatus, Tenant, TenantStatus, TenantSubscription
 from app.reference_data import default_subscription_period
 
 logger = get_logger().child({"component": "tenant"})
@@ -304,6 +304,9 @@ class TenantService:
             jobs = AsyncJobService(self.db)
             jobs.enqueue_shop_info_fetch(tenant.id)
             jobs.enqueue_markets_sync(tenant.id)
+            # Creates the Web Pixel and the metafield, and fetches the storefront hosts.
+            jobs.enqueue(tenant_id=tenant.id, operation=AsyncJobOperation.PIXEL_MAPPING_PUBLISH, topic="install/publish")
+            jobs.enqueue(tenant_id=tenant.id, operation=AsyncJobOperation.STOREFRONT_HOSTS_SYNC, topic="install/hosts")
         except Exception as exc:  # noqa: BLE001 — enqueue must never fail install
             logger.warn("tenant.install_jobs_enqueue_failed", {"tenantId": str(tenant.id), "detail": str(exc)})
 

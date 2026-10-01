@@ -100,3 +100,25 @@ def dispatch_billing_reconcile() -> dict[str, int]:
         return {"reconciled": reconciled}
     finally:
         db.close()
+
+
+@celery_app.task(name="app.workers.tasks.dispatch_storefront_hosts_sync")
+def dispatch_storefront_hosts_sync() -> dict[str, int]:
+    """Daily: queue a storefront host re-fetch for every installed shop, so a new
+    custom domain reaches the Relay allowlist within a day."""
+    from sqlalchemy import select
+
+    from app.models import AsyncJobOperation, Tenant, TenantStatus
+    from app.services.async_job_service import AsyncJobService
+
+    logger = get_logger()
+    db = SessionLocal()
+    try:
+        jobs = AsyncJobService(db)
+        tenants = db.scalars(select(Tenant).where(Tenant.status == TenantStatus.ACTIVE)).all()
+        for tenant in tenants:
+            jobs.enqueue(tenant_id=tenant.id, operation=AsyncJobOperation.STOREFRONT_HOSTS_SYNC, topic="daily/hosts")
+        logger.info("worker.storefront_hosts_dispatch.completed", {"shops": len(tenants)})
+        return {"shops": len(tenants)}
+    finally:
+        db.close()

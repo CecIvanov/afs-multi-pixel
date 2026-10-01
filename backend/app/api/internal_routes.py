@@ -200,6 +200,13 @@ def list_markets(
     tenant = _tenant_or_404(db, shop_domain)
     sync_error = None
     if sync:
+        # App open also refreshes the storefront hosts, in the worker (spec §5).
+        from app.models import AsyncJobOperation
+        from app.services.async_job_service import AsyncJobService
+
+        AsyncJobService(db).enqueue(
+            tenant_id=tenant.id, operation=AsyncJobOperation.STOREFRONT_HOSTS_SYNC, topic="app_open/hosts"
+        )
         try:
             return MarketsOut(markets=[_market_out(v) for v in markets.sync(tenant)])
         except Exception as exc:  # noqa: BLE001 — a failed re-fetch must not break the page

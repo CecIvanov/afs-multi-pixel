@@ -76,6 +76,9 @@ class Settings(BaseSettings):
     # Encryption at rest for Conversions API tokens and the Relay private key
     # (app.services.token_cipher). Sourced from .credentials.<stack>; empty fails closed.
     token_enc_key: str = ""
+    # The app's public URL (the Node BFF). The Relay endpoint published to the
+    # storefront is <shopify_app_url>/api/events.
+    shopify_app_url: str = ""
 
 
 @lru_cache

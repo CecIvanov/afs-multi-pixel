@@ -155,14 +155,34 @@ def _handle_orders_create(db: Session, job: AsyncJob) -> None:
 def _handle_markets_sync(db: Session, job: AsyncJob) -> None:
     """Re-fetch the shop's Markets. The markets/* payloads are too thin to apply,
     so every change (and install) runs the same full sync."""
-    from app.models import Tenant
     from app.services.market_service import MarketService
+
+    if (tenant := _admin_ready_tenant(db, job)) is not None:
+        MarketService(db).sync(tenant)
+
+
+def _admin_ready_tenant(db: Session, job: AsyncJob):
+    from app.models import Tenant
     from app.services.shopify_tenant_credentials import tenant_can_call_admin_api
 
     tenant = db.get(Tenant, job.tenant_id)
-    if tenant is None or not tenant_can_call_admin_api(tenant):
-        return
-    MarketService(db).sync(tenant)
+    return tenant if tenant is not None and tenant_can_call_admin_api(tenant) else None
+
+
+@job_handler(AsyncJobOperation.PIXEL_MAPPING_PUBLISH)
+def _handle_pixel_mapping_publish(db: Session, job: AsyncJob) -> None:
+    from app.services.storefront_publisher import StorefrontPublisher
+
+    if (tenant := _admin_ready_tenant(db, job)) is not None:
+        StorefrontPublisher(db).publish(tenant)
+
+
+@job_handler(AsyncJobOperation.STOREFRONT_HOSTS_SYNC)
+def _handle_storefront_hosts_sync(db: Session, job: AsyncJob) -> None:
+    from app.services.storefront_publisher import StorefrontPublisher
+
+    if (tenant := _admin_ready_tenant(db, job)) is not None:
+        StorefrontPublisher(db).sync_storefront_hosts(tenant)
 
 
 @job_handler(AsyncJobOperation.EXAMPLE_OP)

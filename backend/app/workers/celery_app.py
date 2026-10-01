@@ -73,6 +73,12 @@ celery_app.conf.update(
             "schedule": crontab(hour=2, minute=0),
             "options": {"queue": settings.celery_task_queue},
         },
+        # Daily: re-fetch every shop's storefront hosts (spec §8).
+        f"{settings.app_env}-storefront-hosts": {
+            "task": "app.workers.tasks.dispatch_storefront_hosts_sync",
+            "schedule": crontab(hour=3, minute=0),
+            "options": {"queue": settings.celery_task_queue},
+        },
         # Offline-token upkeep — enqueue a durable refresh job for any tenant whose
         # Shopify offline access token (or refresh chain) is nearing expiry, so
         # background workers never hit a dead token. See shopify_token_refresh_service.

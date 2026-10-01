@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 
 from app.logging_config import get_logger
 from app.models import Market, MarketPixel, Tenant, TokenState
+from app.services.storefront_publisher import queue_publish
 from app.services.token_cipher import TokenCipher
 
 logger = get_logger().child({"component": "markets"})
@@ -160,10 +161,11 @@ class MarketService:
             )
 
         gone = [market_id for market_id in stored if market_id not in fetched]
+        unmapped = 0
         if gone:
-            self.db.execute(
+            unmapped = self.db.execute(
                 delete(MarketPixel).where(MarketPixel.tenant_id == tenant.id, MarketPixel.shopify_market_id.in_(gone))
-            )
+            ).rowcount
             self.db.execute(delete(Market).where(Market.tenant_id == tenant.id, Market.shopify_market_id.in_(gone)))
         self.db.commit()
         logger.info(
@@ -171,6 +173,8 @@ class MarketService:
             {"tenantId": str(tenant.id), "markets": len(fetched), "added": len(fetched.keys() - stored.keys()),
              "removed": len(gone)},
         )
+        if unmapped:
+            queue_publish(self.db, tenant.id)
         return self.list_markets(tenant)
 
     def list_markets(self, tenant: Tenant) -> list[MarketView]:
@@ -215,6 +219,7 @@ class MarketService:
         self.db.add(row)
         self.db.commit()
         logger.info("markets.pixel_saved", {"tenantId": str(tenant.id), "marketId": market_id, "pixelId": pixel_id})
+        queue_publish(self.db, tenant.id)
         return self._view(market, row)
 
     def remove_pixel(self, tenant: Tenant, market_id: int) -> MarketView:
@@ -224,6 +229,7 @@ class MarketService:
         )
         self.db.commit()
         logger.info("markets.pixel_removed", {"tenantId": str(tenant.id), "marketId": market_id})
+        queue_publish(self.db, tenant.id)
         return self._view(market, None)
 
     # --- internals ------------------------------------------------------------------

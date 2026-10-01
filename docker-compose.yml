@@ -32,6 +32,8 @@ x-backend-env: &backend-env
   SHOPIFY_API_SECRET: ${SHOPIFY_API_SECRET:-}
   # Encryption at rest for Conversions API tokens and the Relay private key.
   TOKEN_ENC_KEY: ${TOKEN_ENC_KEY:-}
+  # The public app URL; the storefront's Relay endpoint is <this>/api/events.
+  SHOPIFY_APP_URL: ${SHOPIFY_APP_URL:-}
 
 services:
   postgres:

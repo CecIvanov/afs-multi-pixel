@@ -61,6 +61,7 @@ __all__ = [
     "AsyncJobStatus",
     "AsyncJobOperation",
     "AsyncJob",
+    "AppKey",
     "Market",
     "TokenState",
     "MarketPixel",
@@ -111,6 +112,13 @@ class Tenant(Base):
 
     # UI language of the embedded admin app, chosen by the merchant.
     app_ui_locale: Mapped[str] = mapped_column(String(8), default="en", server_default="en", nullable=False)
+    # AFS Multi Pixel: the storefront hosts a Relay's Origin may come from
+    # (myshopify, primary and every Market's domains), and two setup-strip steps
+    # only the merchant can confirm.
+    storefront_hosts: Mapped[list[str]] = mapped_column(JSONB, default=list, nullable=False, server_default="[]")
+    storefront_hosts_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    consent_confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    verified_in_meta_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     feature_flags: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False, server_default="{}")
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
@@ -266,6 +274,10 @@ class AsyncJobOperation(str, enum.Enum):
     ORDERS_CREATE = "orders_create"
     # markets/create|update|delete and install: re-fetch the shop's Markets.
     MARKETS_SYNC = "markets_sync"
+    # Mirror the Pixel Mapping, Relay public key and endpoint to the storefront.
+    PIXEL_MAPPING_PUBLISH = "pixel_mapping_publish"
+    # Re-fetch the storefront hosts the Relay accepts as Origin.
+    STOREFRONT_HOSTS_SYNC = "storefront_hosts_sync"
     EXAMPLE_OP = "example_op"
 
 
@@ -347,6 +359,19 @@ class AsyncJob(Base):
 
 
 # --- AFS Multi Pixel ----------------------------------------------------------
+class AppKey(Base):
+    """The Relay RSA key pair, one for the whole app (``id`` is always 1). The
+    storefront encrypts Relays with ``public_key`` (base64 SPKI DER); the private
+    half (base64 PKCS#8 DER) is token_cipher ciphertext."""
+
+    __tablename__ = "app_keys"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    public_key: Mapped[str] = mapped_column(Text, nullable=False)
+    private_key_encrypted: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class Market(Base):
     """A Shopify Market as last fetched from the Admin API, keyed by its numeric ID.
     ``market_type`` and ``status`` keep Shopify's own values (REGION, COMPANY_LOCATION,

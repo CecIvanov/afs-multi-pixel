@@ -33,6 +33,9 @@ _PRIORITY: dict[AsyncJobOperation, int] = {
     AsyncJobOperation.SCOPES_UPDATE: 70,
     AsyncJobOperation.ORDERS_CREATE: 60,
     AsyncJobOperation.MARKETS_SYNC: 60,
+    # Publishing a changed mapping comes before re-syncs: the storefront acts on it.
+    AsyncJobOperation.PIXEL_MAPPING_PUBLISH: 65,
+    AsyncJobOperation.STOREFRONT_HOSTS_SYNC: 40,
     AsyncJobOperation.EXAMPLE_OP: 50,
     AsyncJobOperation.SHOP_INFO_FETCH: 10,
 }
