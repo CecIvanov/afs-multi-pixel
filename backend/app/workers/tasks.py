@@ -122,3 +122,17 @@ def dispatch_storefront_hosts_sync() -> dict[str, int]:
         return {"shops": len(tenants)}
     finally:
         db.close()
+
+
+@celery_app.task(name="app.workers.tasks.daily_retention")
+def daily_retention() -> dict[str, int]:
+    from app.services.retention_service import run_daily_retention
+
+    db = SessionLocal()
+    try:
+        return run_daily_retention(db)
+    except Exception as exc:  # noqa: BLE001
+        get_logger().error("worker.daily_retention.failed", exc)
+        raise
+    finally:
+        db.close()

@@ -73,6 +73,13 @@ celery_app.conf.update(
             "schedule": crontab(hour=2, minute=0),
             "options": {"queue": settings.celery_task_queue},
         },
+        # Daily retention: the event log keeps 30 days, pending Purchases and
+        # paused events expire after Meta's 7 days (spec §6, §8).
+        f"{settings.app_env}-daily-retention": {
+            "task": "app.workers.tasks.daily_retention",
+            "schedule": crontab(hour=3, minute=30),
+            "options": {"queue": settings.celery_task_queue},
+        },
         # Daily: re-fetch every shop's storefront hosts (spec §8).
         f"{settings.app_env}-storefront-hosts": {
             "task": "app.workers.tasks.dispatch_storefront_hosts_sync",
