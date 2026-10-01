@@ -166,3 +166,68 @@ export async function reconcileBilling(payload: {
     body: JSON.stringify(payload),
   });
 }
+
+// --- Markets and the Pixel Mapping (the Market health page) ----------------------
+export type MarketPixelRecord = {
+  pixel_id: string;
+  pixel_name: string | null;
+  test_event_code: string | null;
+  token_state: "ok" | "rejected";
+  has_token: boolean;
+};
+
+export type MarketRecord = {
+  shopify_market_id: number;
+  name: string;
+  market_type: string;
+  status: string;
+  regions: string[];
+  first_seen_at: string;
+  is_new: boolean;
+  pixel: MarketPixelRecord | null;
+};
+
+export type PixelCheckRecord = {
+  ok: boolean;
+  pixel_name: string | null;
+  owner_name: string | null;
+  error: string | null;
+};
+
+export type PixelInput = { pixel_id: string; token?: string; test_event_code?: string };
+
+function marketsPath(shopDomain: string, suffix = "") {
+  return `/api/v1/internal/tenants/by-shop/${encodeURIComponent(shopDomain)}/markets${suffix}`;
+}
+
+/** The shop's Markets; `sync` re-fetches them from Shopify first (app open). */
+export async function listMarkets(shopDomain: string, { sync = false } = {}) {
+  return backendFetch<{ markets: MarketRecord[]; sync_error: string | null }>(
+    marketsPath(shopDomain, sync ? "?sync=true" : ""),
+    { shopDomain },
+  );
+}
+
+export async function checkMarketPixel(shopDomain: string, marketId: number, input: PixelInput) {
+  return backendFetch<PixelCheckRecord>(marketsPath(shopDomain, `/${marketId}/pixel/check`), {
+    method: "POST",
+    shopDomain,
+    body: JSON.stringify(input),
+  });
+}
+
+/** Saves only a pair that passes Check with Meta; a refusal is a 422 with the reason. */
+export async function saveMarketPixel(shopDomain: string, marketId: number, input: PixelInput) {
+  return backendFetch<MarketRecord>(marketsPath(shopDomain, `/${marketId}/pixel`), {
+    method: "PUT",
+    shopDomain,
+    body: JSON.stringify(input),
+  });
+}
+
+export async function removeMarketPixel(shopDomain: string, marketId: number) {
+  return backendFetch<MarketRecord>(marketsPath(shopDomain, `/${marketId}/pixel`), {
+    method: "DELETE",
+    shopDomain,
+  });
+}

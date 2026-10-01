@@ -115,6 +115,9 @@ class AsyncJobService:
     def enqueue_shop_info_fetch(self, tenant_id: uuid.UUID, *, topic: str = "install/shop_info") -> AsyncJob:
         return self.enqueue(tenant_id=tenant_id, operation=AsyncJobOperation.SHOP_INFO_FETCH, topic=topic)
 
+    def enqueue_markets_sync(self, tenant_id: uuid.UUID, *, topic: str = "install/markets") -> AsyncJob:
+        return self.enqueue(tenant_id=tenant_id, operation=AsyncJobOperation.MARKETS_SYNC, topic=topic)
+
     def enqueue_token_refresh(self, tenant_id: uuid.UUID, *, topic: str = "scheduled/token_refresh") -> AsyncJob:
         return self.enqueue(tenant_id=tenant_id, operation=AsyncJobOperation.TOKEN_REFRESH, topic=topic)
 

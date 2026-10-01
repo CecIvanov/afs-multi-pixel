@@ -1,0 +1,139 @@
+"""The internal Markets API the BFF calls for the Market health page (spec §4).
+MarketService's Shopify and Meta seams are faked through the get_market_service
+dependency."""
+
+from __future__ import annotations
+
+import pytest
+from sqlalchemy import select
+
+from app.models import MarketPixel
+from app.services.market_service import MarketService, PixelCheck
+from app.services.token_cipher import TokenCipher, load_token_key
+from tests.conftest import INTERNAL_HEADERS
+from tests.test_markets import BG, GR, KEY_HEX, PIXEL, SHOP, TOKEN, FakeMeta, FakeShopify, _tenant
+
+BASE = f"/api/v1/internal/tenants/by-shop/{SHOP}/markets"
+
+
+@pytest.fixture()
+def fakes(db):
+    from app.api.internal_routes import get_market_service
+    from app.main import app
+
+    shopify, meta = FakeShopify([BG, GR]), FakeMeta()
+    cipher = TokenCipher(load_token_key(KEY_HEX))
+
+    def override():
+        return MarketService(db, fetch_markets=shopify, check_pixel=meta, cipher=cipher)
+
+    app.dependency_overrides[get_market_service] = override
+    yield shopify, meta
+    app.dependency_overrides.pop(get_market_service, None)
+
+
+@pytest.mark.integration
+def test_listing_with_sync_returns_the_fetched_markets(db, client, fakes):
+    _tenant(db)
+
+    response = client.get(BASE, params={"sync": "true"}, headers=INTERNAL_HEADERS)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["sync_error"] is None
+    assert [(m["shopify_market_id"], m["name"], m["pixel"]) for m in body["markets"]] == [
+        (101, "Bulgaria", None),
+        (102, "Greece", None),
+    ]
+
+
+@pytest.mark.integration
+def test_a_failed_sync_still_lists_the_stored_markets(db, client, fakes):
+    shopify, _ = fakes
+    _tenant(db)
+    client.get(BASE, params={"sync": "true"}, headers=INTERNAL_HEADERS)
+    shopify.markets = []  # Shopify answers badly
+
+    body = client.get(BASE, params={"sync": "true"}, headers=INTERNAL_HEADERS).json()
+
+    assert body["sync_error"]
+    assert [m["shopify_market_id"] for m in body["markets"]] == [101, 102]
+
+
+@pytest.mark.integration
+def test_unknown_shop_is_404(client, fakes):
+    assert client.get(BASE, headers=INTERNAL_HEADERS).status_code == 404
+
+
+@pytest.mark.integration
+def test_check_returns_metas_answer(db, client, fakes):
+    _tenant(db)
+    client.get(BASE, params={"sync": "true"}, headers=INTERNAL_HEADERS)
+
+    response = client.post(f"{BASE}/101/pixel/check", json={"pixel_id": PIXEL, "token": TOKEN}, headers=INTERNAL_HEADERS)
+
+    assert response.status_code == 200
+    assert response.json() == {"ok": True, "pixel_name": "Dontmiss BG", "owner_name": "Dontmiss Ltd", "error": None}
+
+
+@pytest.mark.integration
+def test_save_maps_the_market_and_never_returns_the_token(db, client, fakes):
+    _tenant(db)
+    client.get(BASE, params={"sync": "true"}, headers=INTERNAL_HEADERS)
+
+    response = client.put(
+        f"{BASE}/101/pixel", json={"pixel_id": PIXEL, "token": TOKEN, "test_event_code": "TEST1"}, headers=INTERNAL_HEADERS
+    )
+
+    assert response.status_code == 200
+    assert TOKEN not in response.text
+    assert response.json()["pixel"] == {
+        "pixel_id": PIXEL, "pixel_name": "Dontmiss BG", "test_event_code": "TEST1", "token_state": "ok", "has_token": True,
+    }
+
+
+@pytest.mark.integration
+def test_save_without_a_token_is_422_with_the_reason(db, client, fakes):
+    _tenant(db)
+    client.get(BASE, params={"sync": "true"}, headers=INTERNAL_HEADERS)
+
+    response = client.put(f"{BASE}/101/pixel", json={"pixel_id": PIXEL, "token": ""}, headers=INTERNAL_HEADERS)
+
+    assert response.status_code == 422
+    assert "token" in response.json()["detail"]
+    assert db.scalars(select(MarketPixel)).all() == []
+
+
+@pytest.mark.integration
+def test_save_that_fails_check_with_meta_is_422(db, client, fakes):
+    _, meta = fakes
+    meta.result = PixelCheck(ok=False, error="Meta refused the check: Invalid OAuth access token")
+    _tenant(db)
+    client.get(BASE, params={"sync": "true"}, headers=INTERNAL_HEADERS)
+
+    response = client.put(f"{BASE}/101/pixel", json={"pixel_id": PIXEL, "token": TOKEN}, headers=INTERNAL_HEADERS)
+
+    assert response.status_code == 422
+    assert "Invalid OAuth" in response.json()["detail"]
+
+
+@pytest.mark.integration
+def test_save_for_a_market_the_shop_doesnt_have_is_404(db, client, fakes):
+    _tenant(db)
+    client.get(BASE, params={"sync": "true"}, headers=INTERNAL_HEADERS)
+
+    response = client.put(f"{BASE}/999/pixel", json={"pixel_id": PIXEL, "token": TOKEN}, headers=INTERNAL_HEADERS)
+
+    assert response.status_code == 404
+
+
+@pytest.mark.integration
+def test_remove_unmaps_the_market(db, client, fakes):
+    _tenant(db)
+    client.get(BASE, params={"sync": "true"}, headers=INTERNAL_HEADERS)
+    client.put(f"{BASE}/101/pixel", json={"pixel_id": PIXEL, "token": TOKEN}, headers=INTERNAL_HEADERS)
+
+    response = client.delete(f"{BASE}/101/pixel", headers=INTERNAL_HEADERS)
+
+    assert response.status_code == 200
+    assert response.json()["pixel"] is None

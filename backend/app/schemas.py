@@ -112,3 +112,46 @@ def tenant_to_out(tenant: Tenant, db: Session) -> TenantOut:
         plan_handle=plan_handle,
         feature_flags=tenant.feature_flags or {},
     )
+
+
+# --- Markets and the Pixel Mapping ------------------------------------------------
+class PixelOut(BaseModel):
+    pixel_id: str
+    pixel_name: str | None = None
+    test_event_code: str | None = None
+    token_state: str
+    has_token: bool
+
+
+class MarketOut(BaseModel):
+    shopify_market_id: int
+    name: str
+    market_type: str
+    status: str
+    regions: list[str] = Field(default_factory=list)
+    first_seen_at: datetime
+    is_new: bool
+    pixel: PixelOut | None = None
+
+
+class MarketsOut(BaseModel):
+    markets: list[MarketOut]
+    # Set when the re-fetch from Shopify failed and the stored list is shown instead.
+    sync_error: str | None = None
+
+
+class PixelCheckIn(BaseModel):
+    pixel_id: str
+    # Blank means "use the token already saved for this Market".
+    token: str | None = None
+
+
+class PixelSaveIn(PixelCheckIn):
+    test_event_code: str | None = None
+
+
+class PixelCheckOut(BaseModel):
+    ok: bool
+    pixel_name: str | None = None
+    owner_name: str | None = None
+    error: str | None = None

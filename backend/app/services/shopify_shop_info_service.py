@@ -83,13 +83,15 @@ def upsert_tenant_metadata(db: Session, tenant_id: uuid.UUID, values: dict[str, 
             row.m_value = value
 
 
-def _admin_graphql(*, shop_domain: str, access_token: str, query: str) -> dict[str, Any]:
+def admin_graphql(
+    *, shop_domain: str, access_token: str, query: str, variables: dict[str, Any] | None = None
+) -> dict[str, Any]:
     version = _api_version()
     url = f"https://{shop_domain.strip().lower()}/admin/api/{version}/graphql.json"
     try:
         response = httpx.post(
             url,
-            json={"query": query, "variables": {}},
+            json={"query": query, "variables": variables or {}},
             headers={"X-Shopify-Access-Token": access_token, "Content-Type": "application/json"},
             timeout=30.0,
         )
@@ -122,7 +124,7 @@ def execute_shop_info_fetch_for_tenant(db: Session, tenant: Tenant) -> bool:
         logger.info("shopify_shop_info.skipped_no_admin_access", {"tenantId": str(tenant.id)})
         return False
 
-    payload = _admin_graphql(
+    payload = admin_graphql(
         shop_domain=tenant.shop_domain, access_token=tenant.access_token or "", query=SHOP_INFO_QUERY
     )
     shop = (payload.get("data") or {}).get("shop") or {}

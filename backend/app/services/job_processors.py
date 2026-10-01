@@ -153,8 +153,16 @@ def _handle_orders_create(db: Session, job: AsyncJob) -> None:
 
 @job_handler(AsyncJobOperation.MARKETS_SYNC)
 def _handle_markets_sync(db: Session, job: AsyncJob) -> None:
-    # The Market re-fetch lands with #4; until then the change is acknowledged.
-    logger.info("job.markets_sync.not_synced", {"jobId": str(job.id), "tenantId": str(job.tenant_id)})
+    """Re-fetch the shop's Markets. The markets/* payloads are too thin to apply,
+    so every change (and install) runs the same full sync."""
+    from app.models import Tenant
+    from app.services.market_service import MarketService
+    from app.services.shopify_tenant_credentials import tenant_can_call_admin_api
+
+    tenant = db.get(Tenant, job.tenant_id)
+    if tenant is None or not tenant_can_call_admin_api(tenant):
+        return
+    MarketService(db).sync(tenant)
 
 
 @job_handler(AsyncJobOperation.EXAMPLE_OP)

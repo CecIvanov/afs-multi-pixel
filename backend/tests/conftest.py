@@ -83,7 +83,7 @@ def _clean_tables():
     session = SessionLocal()
     try:
         for tbl in (
-            "async_jobs", "webhook_events", "server_events", "pending_purchases", "market_pixels",
+            "async_jobs", "webhook_events", "server_events", "pending_purchases", "market_pixels", "markets",
             "billing_subscription_events", "usage_counters",
             "tenant_subscriptions", "tenants_metadata", "tenants", '"Session"',
         ):

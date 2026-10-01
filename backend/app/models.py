@@ -11,8 +11,9 @@ shop installs the app:
 Phase 2 adds ``WebhookEvent`` + the durable ``AsyncJob`` queue; Phase 3 extends
 the billing tables (pending plan, trial, usage, subscription events).
 
-AFS Multi Pixel adds its own tenant-scoped tables (spec §6): ``MarketPixel`` (the
-Pixel Mapping, with encrypted Conversions API tokens), ``ServerEvent`` (the Server
+AFS Multi Pixel adds its own tenant-scoped tables (spec §6): ``Market`` (the
+shop's re-fetched Markets), ``MarketPixel`` (the Pixel Mapping, with encrypted
+Conversions API tokens), ``ServerEvent`` (the Server
 Event queue + event log) and ``PendingPurchase`` (the Purchase join).
 """
 
@@ -60,6 +61,7 @@ __all__ = [
     "AsyncJobStatus",
     "AsyncJobOperation",
     "AsyncJob",
+    "Market",
     "TokenState",
     "MarketPixel",
     "ServerEventSource",
@@ -262,7 +264,7 @@ class AsyncJobOperation(str, enum.Enum):
     TOKEN_REFRESH = "token_refresh"
     # orders/create: the Purchase join (handler lands with #9).
     ORDERS_CREATE = "orders_create"
-    # markets/create|update|delete: re-fetch the shop's Markets (handler lands with #4).
+    # markets/create|update|delete and install: re-fetch the shop's Markets.
     MARKETS_SYNC = "markets_sync"
     EXAMPLE_OP = "example_op"
 
@@ -345,6 +347,29 @@ class AsyncJob(Base):
 
 
 # --- AFS Multi Pixel ----------------------------------------------------------
+class Market(Base):
+    """A Shopify Market as last fetched from the Admin API, keyed by its numeric ID.
+    ``market_type`` and ``status`` keep Shopify's own values (REGION, COMPANY_LOCATION,
+    … / ACTIVE, DRAFT). ``added_after_first_sync`` marks a Market that appeared after
+    the shop's first sync, which is what makes an unmapped Market "new"."""
+
+    __tablename__ = "markets"
+    __table_args__ = (UniqueConstraint("tenant_id", "shopify_market_id", name="uq_markets_tenant_market"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tenants.id"), nullable=False)
+    shopify_market_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    market_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    regions: Mapped[list[str]] = mapped_column(JSONB, default=list, nullable=False, server_default="[]")
+    added_after_first_sync: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    first_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
 class TokenState(str, enum.Enum):
     OK = "ok"
     REJECTED = "rejected"

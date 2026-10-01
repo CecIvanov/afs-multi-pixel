@@ -79,7 +79,7 @@ class TenantService:
         self.db.commit()
         self.db.refresh(tenant)
         logger.info("tenant.created", {"tenantId": str(tenant.id), "shop": tenant.shop_domain})
-        self._enqueue_shop_info_fetch(tenant)
+        self._enqueue_install_jobs(tenant)
         return tenant
 
     def _attach_default_subscription(self, tenant: Tenant, *, plan_handle: str) -> None:
@@ -140,7 +140,7 @@ class TenantService:
             self.db.commit()
             self.db.refresh(tenant)
             logger.info("tenant.reinstalled", {"tenantId": str(tenant.id), "shop": tenant.shop_domain})
-            self._enqueue_shop_info_fetch(tenant)
+            self._enqueue_install_jobs(tenant)
             return tenant
 
         return self.sync_shopify_session(
@@ -291,18 +291,21 @@ class TenantService:
             self.db.commit()
             self.db.refresh(tenant)
 
-    def _enqueue_shop_info_fetch(self, tenant: Tenant) -> None:
-        """Best-effort async capture of the store profile via the durable job queue
-        (a plain DB insert — needs no broker, so it never blocks install). The job
-        pool processes it; a failure retries + dead-letters like any other job."""
+    def _enqueue_install_jobs(self, tenant: Tenant) -> None:
+        """Best-effort async capture of the store profile and the shop's Markets via
+        the durable job queue (a plain DB insert — needs no broker, so it never blocks
+        install). The job pool processes them; a failure retries + dead-letters like
+        any other job."""
         if not (tenant.access_token and tenant.status == TenantStatus.ACTIVE):
             return
         try:
             from app.services.async_job_service import AsyncJobService
 
-            AsyncJobService(self.db).enqueue_shop_info_fetch(tenant.id)
+            jobs = AsyncJobService(self.db)
+            jobs.enqueue_shop_info_fetch(tenant.id)
+            jobs.enqueue_markets_sync(tenant.id)
         except Exception as exc:  # noqa: BLE001 — enqueue must never fail install
-            logger.warn("tenant.shop_info_enqueue_failed", {"tenantId": str(tenant.id), "detail": str(exc)})
+            logger.warn("tenant.install_jobs_enqueue_failed", {"tenantId": str(tenant.id), "detail": str(exc)})
 
 
 def get_app_top_plan_handle() -> str:

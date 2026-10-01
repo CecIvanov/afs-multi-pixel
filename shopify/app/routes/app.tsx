@@ -35,7 +35,7 @@ export default function App() {
   return (
     <AppProvider apiKey={apiKey}>
       <NavMenu>
-        <Link to="/app" rel="home">Home</Link>
+        <Link to="/app" rel="home">Markets</Link>
         <Link to="/app/billing">Billing</Link>
         <Link to="/app/settings">Settings</Link>
         <Link to="/app/help">Help</Link>

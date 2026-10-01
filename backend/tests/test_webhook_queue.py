@@ -231,23 +231,12 @@ def test_ingest_maps_topic_to_operation(db, topic, operation):
 
 
 @pytest.mark.integration
-def test_orders_and_markets_jobs_complete_until_their_handlers_land(db):
+def test_orders_job_completes_until_its_handler_lands(db):
     _quiet_tenant(db)
     _ingest(db, "orders/create", "wh-o1", payload={"id": 1001})
-    _ingest(db, "markets/create", "wh-m1", payload={"id": 7})
     _drain(db)
-    statuses = {
-        j.operation: j.status
-        for j in db.scalars(
-            select(AsyncJob).where(
-                AsyncJob.operation.in_([AsyncJobOperation.ORDERS_CREATE, AsyncJobOperation.MARKETS_SYNC])
-            )
-        )
-    }
-    assert statuses == {
-        AsyncJobOperation.ORDERS_CREATE: AsyncJobStatus.COMPLETED,
-        AsyncJobOperation.MARKETS_SYNC: AsyncJobStatus.COMPLETED,
-    }
+    job = db.scalar(select(AsyncJob).where(AsyncJob.operation == AsyncJobOperation.ORDERS_CREATE))
+    assert job.status == AsyncJobStatus.COMPLETED
 
 
 @pytest.mark.integration

@@ -4,6 +4,8 @@ shared secret. Never expose these to the internet.
 
 from __future__ import annotations
 
+from dataclasses import asdict
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
@@ -12,6 +14,11 @@ from app.schemas import (
     BillingOut,
     BillingReconcileIn,
     BillingReconcileOut,
+    MarketOut,
+    MarketsOut,
+    PixelCheckIn,
+    PixelCheckOut,
+    PixelSaveIn,
     ShopifyInstallIn,
     ShopifySessionSyncIn,
     TenantOut,
@@ -19,8 +26,13 @@ from app.schemas import (
     WebhookIngestOut,
     tenant_to_out,
 )
+from app.logging_config import get_logger
+from app.models import Tenant
+from app.services.market_service import MarketService, MarketView, PixelValidationError
 from app.services.tenant_service import TenantService
 from app.services.webhook_ingest_service import WebhookIngestService
+
+logger = get_logger().child({"component": "internal_routes"})
 
 router = APIRouter(
     prefix="/api/v1/internal",
@@ -157,3 +169,93 @@ def get_billing_by_shop(shop_domain: str, db: Session = Depends(get_db)) -> Bill
         quota=plan.monthly_quota if plan else None,
         supports={feat: billing.has_feature(tenant.id, feat) for feat in _feature_min_rank()},
     )
+
+
+# --- Markets and the Pixel Mapping (the Market health page) ------------------------
+def get_market_service(db: Session = Depends(get_db)) -> MarketService:
+    return MarketService(db)
+
+
+def _tenant_or_404(db: Session, shop_domain: str) -> Tenant:
+    tenant = TenantService(db).get_tenant_by_shop_domain(shop_domain)
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Tenant not found")
+    return tenant
+
+
+def _market_out(view: MarketView) -> MarketOut:
+    return MarketOut.model_validate(asdict(view))
+
+
+@router.get("/tenants/by-shop/{shop_domain}/markets", response_model=MarketsOut)
+def list_markets(
+    shop_domain: str,
+    sync: bool = False,
+    db: Session = Depends(get_db),
+    markets: MarketService = Depends(get_market_service),
+) -> MarketsOut:
+    """The shop's Markets with their Market Pixels. ``sync=true`` (app open)
+    re-fetches them from Shopify first; if that fails the stored list is returned
+    with ``sync_error`` set, so the page still renders."""
+    tenant = _tenant_or_404(db, shop_domain)
+    sync_error = None
+    if sync:
+        try:
+            return MarketsOut(markets=[_market_out(v) for v in markets.sync(tenant)])
+        except Exception as exc:  # noqa: BLE001 — a failed re-fetch must not break the page
+            db.rollback()
+            sync_error = str(exc)[:500]
+            logger.warn("markets.sync_on_open_failed", {"shop": shop_domain, "detail": sync_error})
+    return MarketsOut(markets=[_market_out(v) for v in markets.list_markets(tenant)], sync_error=sync_error)
+
+
+@router.post("/tenants/by-shop/{shop_domain}/markets/{market_id}/pixel/check", response_model=PixelCheckOut)
+def check_market_pixel(
+    shop_domain: str,
+    market_id: int,
+    payload: PixelCheckIn,
+    db: Session = Depends(get_db),
+    markets: MarketService = Depends(get_market_service),
+) -> PixelCheckOut:
+    tenant = _tenant_or_404(db, shop_domain)
+    try:
+        check = markets.check_pixel(tenant, market_id, pixel_id=payload.pixel_id, token=payload.token)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except PixelValidationError as exc:
+        return PixelCheckOut(ok=False, error=str(exc))
+    return PixelCheckOut(**asdict(check))
+
+
+@router.put("/tenants/by-shop/{shop_domain}/markets/{market_id}/pixel", response_model=MarketOut)
+def save_market_pixel(
+    shop_domain: str,
+    market_id: int,
+    payload: PixelSaveIn,
+    db: Session = Depends(get_db),
+    markets: MarketService = Depends(get_market_service),
+) -> MarketOut:
+    tenant = _tenant_or_404(db, shop_domain)
+    try:
+        view = markets.save_pixel(
+            tenant, market_id, pixel_id=payload.pixel_id, token=payload.token, test_event_code=payload.test_event_code
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except PixelValidationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return _market_out(view)
+
+
+@router.delete("/tenants/by-shop/{shop_domain}/markets/{market_id}/pixel", response_model=MarketOut)
+def remove_market_pixel(
+    shop_domain: str,
+    market_id: int,
+    db: Session = Depends(get_db),
+    markets: MarketService = Depends(get_market_service),
+) -> MarketOut:
+    tenant = _tenant_or_404(db, shop_domain)
+    try:
+        return _market_out(markets.remove_pixel(tenant, market_id))
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
