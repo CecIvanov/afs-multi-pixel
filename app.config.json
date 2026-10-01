@@ -41,9 +41,13 @@
     }
   },
   "billing": {
-    "_comment": "mode = managed | api | disabled. Under 'managed', plans live in the Partner Dashboard and this catalog is the local mirror (handles + ranks + entitlements). 'shopifyPlanName' must match the Partner-Dashboard plan name so it normalizes back to the handle.",
+    "_comment": "AFS Multi Pixel has ONE paid plan, no trial, defined in the Partner Dashboard (managed pricing). The app knows only its exact name ('plan.name', overridable with BILLING_PLAN_NAME) and whether the shop's subscription to it is active; never an amount. 'plans' below feed the template's dormant tiered engine (backend/app/billing) and are not used for gating.",
     "mode": "managed",
-    "trialDays": 7,
+    "trialDays": 0,
+    "plan": {
+      "handle": "afs-multi-pixel",
+      "name": "AFS Multi Pixel"
+    },
     "freePlanHandle": "free",
     "topPlanHandle": "pro",
     "plans": [

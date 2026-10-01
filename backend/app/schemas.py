@@ -209,3 +209,7 @@ class EventLogRowOut(BaseModel):
 
 class EventLogOut(BaseModel):
     events: list[EventLogRowOut]
+
+
+class SubscriptionIn(BaseModel):
+    active: bool

@@ -33,6 +33,7 @@ TOPIC_TO_OPERATION: dict[str, AsyncJobOperation] = {
     "markets/create": AsyncJobOperation.MARKETS_SYNC,
     "markets/update": AsyncJobOperation.MARKETS_SYNC,
     "markets/delete": AsyncJobOperation.MARKETS_SYNC,
+    "app_subscriptions/update": AsyncJobOperation.SUBSCRIPTION_UPDATE,
 }
 
 # These must return 2xx to Shopify even when the shop row is unknown (already

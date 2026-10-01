@@ -23,6 +23,7 @@ from app.schemas import (
     RelayOut,
     SetupIn,
     SetupOut,
+    SubscriptionIn,
     SummaryOut,
     PixelCheckIn,
     PixelCheckOut,
@@ -335,3 +336,14 @@ def remove_market_pixel(
         return _market_out(markets.remove_pixel(tenant, market_id))
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.post("/tenants/by-shop/{shop_domain}/subscription", response_model=SetupOut)
+def report_subscription(shop_domain: str, payload: SubscriptionIn, db: Session = Depends(get_db)) -> SetupOut:
+    """The BFF reports whether the shop's subscription to the one plan is active
+    (read on app open); without it Relays stop (spec §5)."""
+    from app.services.subscription_service import set_subscription_active
+
+    tenant = _tenant_or_404(db, shop_domain)
+    set_subscription_active(db, tenant, payload.active)
+    return _setup_out(tenant)

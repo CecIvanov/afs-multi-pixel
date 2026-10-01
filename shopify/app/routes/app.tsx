@@ -6,13 +6,13 @@ import { NavMenu } from "@shopify/app-bridge-react";
 
 import { authenticate } from "../shopify.server";
 import { ensureBackendTenant } from "../tenant.server";
-import { reconcileBillingOnLoad } from "../billing-reconcile.server";
+import { checkPlanSubscription } from "../subscription.server";
 import { resolveSupportConfig } from "../support.server";
 import { ViberFab } from "../components/viber-fab";
 import { withRequestContext } from "../request-context.server";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
-  const { session } = await authenticate.admin(request);
+  const { session, admin, redirect } = await authenticate.admin(request);
   return withRequestContext(request, session.shop, async () => {
     // Keep the backend tenant + its Shopify token fresh on every navigation.
     try {
@@ -20,11 +20,17 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     } catch {
       // Token sync must never block the embedded admin from loading.
     }
-    // Reconcile billing against the Partner API (best-effort, managed mode only).
-    await reconcileBillingOnLoad(session.shop);
+    // The one paid plan (spec §5): without an active subscription the admin
+    // shows only the plan page.
+    const subscription = await checkPlanSubscription(admin, session.shop);
+    if (!subscription.active && new URL(request.url).pathname !== "/app/billing") {
+      throw redirect("/app/billing");
+    }
     const support = resolveSupportConfig();
     return {
       apiKey: process.env.SHOPIFY_API_KEY || "",
+      planName: subscription.active ? subscription.planName : null,
+      subscribed: subscription.active,
       viber: support.viber, // { enabled, numberE164, label }
     };
   });
@@ -36,7 +42,7 @@ export default function App() {
     <AppProvider apiKey={apiKey}>
       <NavMenu>
         <Link to="/app" rel="home">Markets</Link>
-        <Link to="/app/billing">Billing</Link>
+        <Link to="/app/billing">Plan</Link>
         <Link to="/app/settings">Settings</Link>
         <Link to="/app/help">Help</Link>
       </NavMenu>

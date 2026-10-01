@@ -191,6 +191,17 @@ def _handle_storefront_hosts_sync(db: Session, job: AsyncJob) -> None:
         StorefrontPublisher(db).sync_storefront_hosts(tenant)
 
 
+@job_handler(AsyncJobOperation.SUBSCRIPTION_UPDATE)
+def _handle_subscription_update(db: Session, job: AsyncJob) -> None:
+    from app.models import Tenant
+    from app.services.subscription_service import is_plan_subscription_active, set_subscription_active
+
+    tenant = db.get(Tenant, job.tenant_id)
+    subscription = (job.payload or {}).get("app_subscription") or {}
+    if tenant is not None and subscription:
+        set_subscription_active(db, tenant, is_plan_subscription_active(subscription))
+
+
 @job_handler(AsyncJobOperation.EXAMPLE_OP)
 def _handle_example(db: Session, job: AsyncJob) -> None:
     logger.info("job.example", {"jobId": str(job.id), "tenantId": str(job.tenant_id)})

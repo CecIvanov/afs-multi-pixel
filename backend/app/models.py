@@ -119,6 +119,8 @@ class Tenant(Base):
     storefront_hosts_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     consent_confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     verified_in_meta_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # The one paid plan's subscription: NULL until first checked, False stops Relays.
+    subscription_active: Mapped[bool | None] = mapped_column(Boolean)
     feature_flags: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False, server_default="{}")
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
@@ -278,6 +280,8 @@ class AsyncJobOperation(str, enum.Enum):
     PIXEL_MAPPING_PUBLISH = "pixel_mapping_publish"
     # Re-fetch the storefront hosts the Relay accepts as Origin.
     STOREFRONT_HOSTS_SYNC = "storefront_hosts_sync"
+    # app_subscriptions/update: is the subscription to the one plan still active?
+    SUBSCRIPTION_UPDATE = "subscription_update"
     EXAMPLE_OP = "example_op"
 
 

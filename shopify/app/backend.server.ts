@@ -287,3 +287,10 @@ export async function updateSetup(shopDomain: string, changes: Partial<SetupReco
     body: JSON.stringify(changes),
   });
 }
+
+export async function reportSubscription(shopDomain: string, active: boolean) {
+  return backendFetch<SetupRecord>(
+    `/api/v1/internal/tenants/by-shop/${encodeURIComponent(shopDomain)}/subscription`,
+    { method: "POST", shopDomain, body: JSON.stringify({ active }) },
+  );
+}

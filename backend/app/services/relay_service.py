@@ -175,6 +175,9 @@ class RelayService:
         if tenant is None or tenant.status != TenantStatus.ACTIVE:
             logger.info("relay.rejected", {"reason": "unknown_shop", "shop": shop[:255], "origin": ctx.origin})
             return "rejected"
+        if tenant.subscription_active is False:
+            logger.info("relay.rejected", {"reason": "no_subscription", "shop": tenant.shop_domain})
+            return "rejected"
         if not self._limiter_or_default().allow(ip=ctx.ip, shop=tenant.shop_domain):
             logger.info("relay.limited", {"shop": tenant.shop_domain, "ip": ctx.ip})
             return "limited"
