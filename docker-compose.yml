@@ -30,6 +30,8 @@ x-backend-env: &backend-env
   # the Node BFF. Sourced from .credentials.<stack>.
   SHOPIFY_API_KEY: ${SHOPIFY_API_KEY:-}
   SHOPIFY_API_SECRET: ${SHOPIFY_API_SECRET:-}
+  # Encryption at rest for Conversions API tokens and the Relay private key.
+  TOKEN_ENC_KEY: ${TOKEN_ENC_KEY:-}
 
 services:
   postgres:

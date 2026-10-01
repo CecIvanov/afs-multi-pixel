@@ -73,6 +73,10 @@ class Settings(BaseSettings):
     # that isn't identity (which lives in app.config.json) belongs here.
     # example_external_api_url: str = "https://api.example.com"
 
+    # Encryption at rest for Conversions API tokens and the Relay private key
+    # (app.services.token_cipher). Sourced from .credentials.<stack>; empty fails closed.
+    token_enc_key: str = ""
+
 
 @lru_cache
 def get_settings() -> Settings:
