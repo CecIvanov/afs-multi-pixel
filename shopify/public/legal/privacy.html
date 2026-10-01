@@ -3,22 +3,44 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Privacy Policy</title>
+    <title>AFS Multi Pixel Privacy Policy</title>
     <style>
       body { font-family: Inter, system-ui, sans-serif; max-width: 720px; margin: 48px auto; padding: 0 20px; color: #1a1a1a; line-height: 1.6; }
       h1 { font-size: 28px; } h2 { font-size: 18px; margin-top: 28px; }
     </style>
   </head>
   <body>
-    <h1>Privacy Policy</h1>
-    <p><strong>TEMPLATE — replace this with your app's real privacy policy before submitting to the App Store.</strong></p>
-    <h2>What we collect</h2>
-    <p>Describe the shop and customer data your app accesses and why.</p>
-    <h2>How we use it</h2>
-    <p>Describe processing, retention, and any third parties.</p>
-    <h2>GDPR compliance</h2>
-    <p>We honor Shopify's mandatory data-request, customer-redact, and shop-redact webhooks.</p>
+    <h1>AFS Multi Pixel Privacy Policy</h1>
+    <p>AFS Multi Pixel is a Shopify app by AdFeed Studio. It sends a store's conversion events to the store's own Meta pixels, one pixel per Shopify Market. This policy explains what the app processes for the merchants who install it.</p>
+
+    <h2>Roles</h2>
+    <p>The merchant is the controller of their shoppers' data. AdFeed Studio processes it on the merchant's behalf, as a processor, only to provide the app.</p>
+
+    <h2>What is processed</h2>
+    <ul>
+      <li>For each event a shopper triggers after giving marketing consent: the shopper's IP address, browser user agent, Meta cookies (<code>_fbp</code>, <code>_fbc</code>), the page URL and the products viewed or bought.</li>
+      <li>For purchases: the order ID and value, and the customer's email, phone, name and address. These are hashed (SHA-256) before they are stored or sent; they are never stored in readable form.</li>
+      <li>About the store: the shop domain, its Markets, and the Meta pixel IDs and Conversions API tokens the merchant enters (tokens are stored encrypted).</li>
+    </ul>
+
+    <h2>Why</h2>
+    <p>Only to send the store's conversion events to the merchant's own Meta pixels, from the browser and through Meta's Conversions API. Nothing is sold, shared with other parties or used for any other purpose. Nothing is sent without the shopper's marketing consent, collected by the store's own cookie banner.</p>
+
+    <h2>Sub-processors</h2>
+    <p>Meta Platforms (the merchant's own pixels and Conversions API) is the only sub-processor.</p>
+
+    <h2>Retention</h2>
+    <ul>
+      <li>Event records: 30 days.</li>
+      <li>A purchase waiting to be matched with its order: at most 7 days.</li>
+      <li>Raw order data from Shopify: deleted as soon as it is processed (only hashed values are kept).</li>
+      <li>When the merchant uninstalls the app, the Conversions API tokens are deleted at once and everything else within 48 hours of Shopify's shop redaction request.</li>
+    </ul>
+
+    <h2>Data requests</h2>
+    <p>We honour Shopify's customer data request, customer redaction and shop redaction webhooks. Because customer data is only kept hashed, we hold nothing that identifies a customer in readable form.</p>
+
     <h2>Contact</h2>
-    <p>Reach us at support@example.com.</p>
+    <p>Questions about this policy: <a href="mailto:support@example.com">support@example.com</a>.</p>
   </body>
 </html>
