@@ -1,6 +1,7 @@
 # Multi-Pixel: Meta pixel per Shopify Market
 
 Label: wayfinder:map
+Status: closed (destination reached, 2026-10-01)
 
 ## Destination
 
@@ -24,6 +25,7 @@ A **working POC app** installed on the dev store `gpay3y-2v.myshopify.com` (BG a
 
 ## Decisions so far
 
+- **POC declared successful (2026-10-01, the user's call):** the destination is reached and this map is closed. Production design continues as a new effort; its brief is [../multi-pixel-app/brief.md](../multi-pixel-app/brief.md), which carries over this map's remaining Not yet specified items.
 - **Content IDs and event shape (2026-10-01, grilled with the user):** match the Official Meta App exactly (observed live on colourpop.com): product IDs with `content_type: product_group` on every event, which matches AdFeed Market Catalogs' `item_group_id`. AddToCart `value` is the unit price, `content_category` is the product type, and ViewContent also fires on cart and collection pages. This closes [Which identifier goes into content_ids so events match the merchant's catalogs?](issues/05-content-ids-format.md).
 - **Conversions API (2026-10-01, grilled with the user; research on branch `research/capi-and-content-ids`):** every Browser Event is relayed encrypted (RSA-OAEP + AES-GCM) to the backend and sent as a Server Event to the same Market Pixel with the same event ID. The token is pasted per Market Pixel, with an optional Test event code. Purchase joins the relayed browser Purchase (consent and Market) with the `orders/create` webhook (hashed customer data) on the order id, using event ID `purchase-<orderId>`. There's no server Purchase without a browser Purchase (cookie consent; `buyer_accepts_marketing` is email consent, not cookie consent). The backend rejects foreign Origins, unknown shops and unmapped market → pixel pairs. An Event log page shows what happened.
 
