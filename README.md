@@ -102,7 +102,7 @@ across two languages; no fragile find-and-replace.
     "slug": "afsmultipixel"                // short id → images, containers, network, DB, keys
   },
   "identifiers": { ... },          // derived from slug; override only on collisions
-  "shopify":  { "apiVersion": "2025-10", "scopes": ["write_products"] },
+  "shopify":  { "apiVersion": "2026-10", "scopes": ["read_markets", "write_pixels", "read_customer_events", "read_orders"] },
   "billing":  { "mode": "managed", "plans": [ ... ] },
   "featureFlags": { ... }
 }

@@ -39,7 +39,7 @@ class ShopifyShopInfoError(RuntimeError):
 
 
 def _api_version() -> str:
-    return get_app_config().raw.get("shopify", {}).get("apiVersion", "2025-10")
+    return get_app_config().raw.get("shopify", {}).get("apiVersion", "2026-10")
 
 
 def tenant_can_call_admin_api(tenant: Tenant) -> bool:

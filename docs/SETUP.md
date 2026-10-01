@@ -41,7 +41,7 @@ npm run config:link      # choose your app; writes client_id into shopify.app.<e
 ```
 
 Keep `api_version` in `shopify.app.toml` equal to `shopify.apiVersion` in
-`app.config.json` (currently `2025-10`).
+`app.config.json` (currently `2026-10`).
 
 ## 5. Run it
 

@@ -33,7 +33,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 export default function App() {
   const { apiKey, viber } = useLoaderData<typeof loader>();
   return (
-    <AppProvider embedded apiKey={apiKey}>
+    <AppProvider apiKey={apiKey}>
       <NavMenu>
         <Link to="/app" rel="home">Home</Link>
         <Link to="/app/billing">Billing</Link>

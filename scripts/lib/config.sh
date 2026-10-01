@@ -63,7 +63,7 @@ load_app_config() {
   export APP_SHARED_NETWORK;    APP_SHARED_NETWORK="$(_config_get identifiers.sharedNetwork "${APP_SLUG}-shared")"
   export APP_CELERY_KEY_PREFIX; APP_CELERY_KEY_PREFIX="$(_config_get identifiers.celeryKeyPrefix "${APP_SLUG}")"
   export APP_TEST_DB_SENTINEL;  APP_TEST_DB_SENTINEL="$(_config_get identifiers.testDbSentinel "${APP_SLUG}_test")"
-  export SHOPIFY_API_VERSION;   SHOPIFY_API_VERSION="$(_config_get shopify.apiVersion 2025-10)"
+  export SHOPIFY_API_VERSION;   SHOPIFY_API_VERSION="$(_config_get shopify.apiVersion 2026-10)"
 
   # Support channels (Help page + optional Viber floating button).
   export SUPPORT_EMAIL;          SUPPORT_EMAIL="$(_config_get support.email '')"

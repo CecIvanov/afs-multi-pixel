@@ -29,6 +29,9 @@ const API_VERSION_ENUM = {
   "2025-10": "October25",
   "2025-07": "July25",
   "2026-01": "January26",
+  "2026-04": "April26",
+  "2026-07": "July26",
+  "2026-10": "October26",
 };
 
 test("API version agrees across app.config.json, every env toml, and shopify.server.ts", () => {

@@ -28,9 +28,12 @@
     }
   },
   "shopify": {
-    "apiVersion": "2025-10",
+    "apiVersion": "2026-10",
     "scopes": [
-      "write_products"
+      "read_markets",
+      "write_pixels",
+      "read_customer_events",
+      "read_orders"
     ],
     "appProxy": {
       "enabled": false,

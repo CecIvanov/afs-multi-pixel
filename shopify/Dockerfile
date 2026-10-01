@@ -1,6 +1,6 @@
 # React Router v7 embedded Shopify app. Build context is the repository ROOT so
 # the shared packages/logger can be copied into the monorepo layout the app imports.
-FROM node:20-alpine AS build
+FROM node:22-alpine AS build
 RUN apk add --no-cache openssl
 WORKDIR /workspace
 
@@ -14,7 +14,7 @@ RUN npm install
 COPY shopify/ .
 RUN npx prisma generate && npm run build
 
-FROM node:20-alpine
+FROM node:22-alpine
 RUN apk add --no-cache openssl wget
 ENV NODE_ENV=production
 WORKDIR /app

@@ -13,13 +13,13 @@ embedded = true
 
 [access_scopes]
 # Start minimal. Add scopes here AND in the SCOPES env var (they must match).
-scopes = "write_products"
+scopes = "read_markets,write_pixels,read_customer_events,read_orders"
 
 [auth]
 redirect_urls = [ "https://example.com/auth/callback" ]
 
 [webhooks]
-api_version = "2025-10"
+api_version = "2026-10"
 
   # App lifecycle
   [[webhooks.subscriptions]]
