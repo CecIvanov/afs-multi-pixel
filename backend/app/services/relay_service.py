@@ -149,7 +149,8 @@ def _host(origin: str) -> str:
         return ""
 
 
-def _numeric(value: Any) -> int | None:
+def numeric_id(value: Any) -> int | None:
+    """``gid://shopify/Market/1``, ``"1"`` and ``1`` all give 1; anything else None."""
     try:
         return int(str(value).rsplit("/", 1)[-1])
     except (TypeError, ValueError):
@@ -186,7 +187,7 @@ class RelayService:
         if refusal:
             return self._reject(tenant, payload, refusal)
 
-        market_id = _numeric(payload["marketId"])
+        market_id = numeric_id(payload["marketId"])
         pixel = self.db.scalar(
             select(MarketPixel).where(MarketPixel.tenant_id == tenant.id, MarketPixel.shopify_market_id == market_id)
         )
@@ -220,12 +221,11 @@ class RelayService:
     def _refusal(self, tenant: Tenant, payload: dict[str, Any], ctx: RelayContext) -> str | None:
         origin = (ctx.origin or "").strip()
         # The strict Web Pixel runs in a sandbox whose requests carry no Origin or "null".
-        if origin and origin != "null" and tenant.storefront_hosts_synced_at is not None:
-            if _host(origin) not in {h.lower() for h in tenant.storefront_hosts or []}:
-                return f"Origin {origin[:100]} isn't a storefront of this shop"
+        if origin and origin != "null" and _host(origin) not in {h.lower() for h in tenant.storefront_hosts or []}:
+            return f"Origin {origin[:100]} isn't a storefront of this shop"
         if payload.get("event") not in STANDARD_FUNNEL:
             return "Not a Standard Funnel event"
-        if not payload.get("eventId") or _numeric(payload.get("marketId")) is None:
+        if not payload.get("eventId") or numeric_id(payload.get("marketId")) is None:
             return "Malformed event"
         return None
 
@@ -236,7 +236,7 @@ class RelayService:
                 source=ServerEventSource.RELAY,
                 event_name=str(payload.get("event") or "?")[:64],
                 event_id=str(payload.get("eventId") or "-")[:255],
-                shopify_market_id=_numeric(payload.get("marketId")) or 0,
+                shopify_market_id=numeric_id(payload.get("marketId")) or 0,
                 pixel_id=str(payload.get("pixelId") or "")[:32],
                 marketing_consent=True,
                 payload={},

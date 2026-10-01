@@ -15,7 +15,6 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Any, Callable
 
-import httpx
 from sqlalchemy import or_, select, update
 from sqlalchemy.orm import Session
 
@@ -26,7 +25,6 @@ from app.services.token_cipher import TokenCipher, TokenDecryptError
 
 logger = get_logger().child({"component": "server_event_sender"})
 
-GRAPH_URL = "https://graph.facebook.com/v26.0"
 META_EVENT_MAX_AGE = timedelta(days=7)
 # Meta's codes for a token that can't be used (expired, revoked, wrong permissions).
 TOKEN_ERROR_CODES = frozenset({102, 190})
@@ -59,18 +57,6 @@ class MetaAnswer:
 PostEvents = Callable[[str, dict[str, Any]], MetaAnswer]
 
 
-def post_events(pixel_id: str, body: dict[str, Any]) -> MetaAnswer:
-    try:
-        response = httpx.post(f"{GRAPH_URL}/{pixel_id}/events", json=body, timeout=20.0)
-    except httpx.HTTPError as exc:
-        return MetaAnswer(status=0, body={"error": {"message": f"Meta couldn't be reached: {exc.__class__.__name__}"}})
-    try:
-        payload = response.json()
-    except ValueError:
-        payload = {}
-    return MetaAnswer(status=response.status_code, body=payload if isinstance(payload, dict) else {})
-
-
 def _classify(answer: MetaAnswer) -> str:
     """"sent" | "token" | "retry" | "rejected"."""
     if 200 <= answer.status < 300:
@@ -100,28 +86,52 @@ class ServerEventSender:
         now: Callable[[], datetime] | None = None,
     ) -> None:
         self.db = db
-        self._post = post or post_events
+        if post is None:
+            from app.services.meta_pixel_client import post_events
+
+            post = post_events
+        self._post = post
         self._cipher = cipher
         self._now = now or (lambda: datetime.now(UTC))
         self._schedule = get_settings().job_retry_schedule_seconds
 
     def send_due(self, limit: int = 100) -> int:
-        """Send up to ``limit`` due events; returns how many were handled."""
+        """Send up to ``limit`` due events; returns how many were handled. Each event
+        is locked, sent and committed in its own transaction, so a second sender
+        never gets it, and one broken event can't hold up the rest."""
         now = self._now()
-        events = self.db.scalars(
-            select(ServerEvent)
-            .where(
-                ServerEvent.status == ServerEventStatus.RECEIVED,
-                or_(ServerEvent.next_attempt_at.is_(None), ServerEvent.next_attempt_at <= now),
-            )
-            .order_by(ServerEvent.created_at)
-            .limit(limit)
-            .with_for_update(skip_locked=True)
-        ).all()
-        for event in events:
-            self._send(event, now)
+        handled = 0
+        while handled < limit:
+            event = self.db.scalars(
+                select(ServerEvent)
+                .where(
+                    ServerEvent.status == ServerEventStatus.RECEIVED,
+                    or_(ServerEvent.next_attempt_at.is_(None), ServerEvent.next_attempt_at <= now),
+                )
+                .order_by(ServerEvent.created_at)
+                .limit(1)
+                .with_for_update(skip_locked=True)
+            ).first()
+            if event is None:
+                break
+            try:
+                self._send(event, now)
+                self.db.commit()
+            except Exception as exc:  # noqa: BLE001 — fail this event, keep the queue moving
+                self.db.rollback()
+                self._fail_broken(event.id, exc)
+            handled += 1
+        return handled
+
+    def _fail_broken(self, event_id, exc: Exception) -> None:
+        event = self.db.get(ServerEvent, event_id)
+        if event is not None:
+            event.status = ServerEventStatus.FAILED
+            event.next_attempt_at = None
+            event.meta_response = {"detail": f"Couldn't be sent: {exc.__class__.__name__}"}
+            event.payload = {}
             self.db.commit()
-        return len(events)
+        logger.error("server_event.broken", exc, {"eventId": str(event_id)})
 
     def _send(self, event: ServerEvent, now: datetime) -> None:
         pixel = self.db.scalar(

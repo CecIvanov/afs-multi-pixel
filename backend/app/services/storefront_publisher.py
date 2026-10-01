@@ -146,11 +146,14 @@ class StorefrontPublisher:
         return tenant.storefront_hosts
 
     def _web_pixel_id(self, tenant: Tenant) -> str | None:
-        # The webPixel query errors (rather than returning null) while the app has none.
+        # The webPixel query errors (rather than returning null) while the app has
+        # none. Any other error (auth, throttling, network) must surface as itself.
         try:
             return (self._graphql(tenant, WEB_PIXEL_QUERY, None).get("webPixel") or {}).get("id")
-        except Exception:  # noqa: BLE001
-            return None
+        except Exception as exc:  # noqa: BLE001
+            if "pixel" in str(exc).lower():
+                return None
+            raise
 
     def _cipher_or_default(self) -> TokenCipher:
         if self._cipher is None:

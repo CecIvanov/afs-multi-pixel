@@ -160,3 +160,15 @@ def test_unmatched_halves_expire_after_seven_days(db, quiet_jobs):
 
     assert db.scalars(select(PendingPurchase)).all() == []
     assert _purchase(db).status == ServerEventStatus.FAILED
+
+
+@pytest.mark.integration
+def test_a_repeated_browser_purchase_after_the_join_keeps_no_data(db, quiet_jobs):
+    _shop(db)
+    _browser_purchase(db)
+    _order_webhook(db)
+
+    _browser_purchase(db)  # e.g. the thank-you page reloaded
+
+    assert db.scalars(select(PendingPurchase)).all() == []
+    assert len(db.scalars(select(ServerEvent)).all()) == 1

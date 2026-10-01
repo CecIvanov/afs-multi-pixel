@@ -286,3 +286,43 @@ def test_the_event_log_lists_recent_events_newest_first(db):
     rows = event_log(db, tenant)
     assert [(r.event_id, r.status, r.sent_as) for r in rows] == [("2", "rejected", "Relay"), ("1", "received", "Server")]
     assert [r.event_id for r in event_log(db, tenant, market_id=101)] == ["1"]
+
+
+@pytest.mark.integration
+def test_one_broken_event_doesnt_block_the_queue(db):
+    _shop(db)
+    _receive(db, _relay(eventId="broken"))
+    _receive(db, _relay(eventId="fine"))
+    broken = db.scalar(select(ServerEvent).where(ServerEvent.event_id == "broken"))
+    broken.payload = None  # e.g. a row damaged by hand
+    db.commit()
+
+    _sender(db, FakeMetaApi()).send_due()
+
+    statuses = {e.event_id: e.status for e in _events(db)}
+    assert statuses == {"broken": ServerEventStatus.FAILED, "fine": ServerEventStatus.SENT}
+
+
+@pytest.mark.integration
+def test_a_foreign_origin_is_rejected_even_before_the_first_host_sync(db):
+    tenant = _shop(db)
+    tenant.storefront_hosts_synced_at = None
+    tenant.storefront_hosts = []
+    db.commit()
+
+    assert _receive(db, ctx=RelayContext(origin="https://evil.example", ip="1.2.3.4", user_agent="x")) == "rejected"
+
+
+@pytest.mark.integration
+def test_resaving_with_the_stored_token_also_resumes_paused_events(db):
+    # The merchant fixed the token's permissions in Meta and saved again.
+    tenant = _shop(db)
+    _receive(db)
+    _sender(db, FakeMetaApi(MetaAnswer(status=400, body={"error": {"code": 190, "message": "x"}}))).send_due()
+    pixel = db.scalar(select(MarketPixel))
+    pixel.token_state = TokenState.OK  # what a passing re-check leads to
+    db.commit()
+
+    _service(db, markets=(BG, GR)).save_pixel(tenant, 101, pixel_id=PIXEL, token=None)
+
+    assert _events(db)[0].status == ServerEventStatus.RECEIVED

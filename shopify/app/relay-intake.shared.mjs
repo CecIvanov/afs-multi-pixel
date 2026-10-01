@@ -5,10 +5,11 @@
 
 export const MAX_RELAY_BYTES = 32 * 1024;
 
-/** The shopper's IP behind Caddy: the first X-Forwarded-For hop. */
+/** The shopper's IP behind Caddy: the last X-Forwarded-For hop, the one our own
+ * proxy added. Earlier hops come from the client and can be forged. */
 export function clientIp(headers) {
   const forwarded = headers.get("x-forwarded-for");
-  if (forwarded) return forwarded.split(",")[0].trim() || null;
+  if (forwarded) return forwarded.split(",").pop().trim() || null;
   return headers.get("x-real-ip") || null;
 }
 

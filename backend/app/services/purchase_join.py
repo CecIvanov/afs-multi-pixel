@@ -106,9 +106,13 @@ class PurchaseJoin:
             self.db.commit()
             return
         event_id = purchase_event_id(order_id)
+        existing = self._event(tenant, event_id)
+        if existing is not None and existing.status != ServerEventStatus.WAITING:
+            # Already joined (e.g. the thank-you page reloaded): nothing more to keep.
+            return
         meta_event = {**meta_event, "event_id": event_id}
         self._upsert_pending(tenant, order_id, browser_half={"event": meta_event, "market_id": pixel.shopify_market_id})
-        if self._event(tenant, event_id) is None:
+        if existing is None:
             self.db.add(
                 _purchase_row(
                     tenant, event_id, pixel, {"event": meta_event}, ServerEventStatus.WAITING, "Waiting for the order webhook"
@@ -195,10 +199,9 @@ def _purchase_row(
 
 
 def _order_id(value: Any) -> int | None:
-    try:
-        return int(str(value).rsplit("/", 1)[-1])
-    except (TypeError, ValueError):
-        return None
+    from app.services.relay_service import numeric_id
+
+    return numeric_id(value)
 
 
 def expire_pending_purchases(db: Session, now: datetime | None = None) -> int:

@@ -214,16 +214,16 @@ class MarketService:
         row.pixel_id = pixel_id
         row.pixel_name = check.pixel_name
         row.test_event_code = (test_event_code or "").strip() or None
-        new_token = bool((token or "").strip())
-        if new_token:
+        if (token or "").strip():
             row.capi_token_encrypted = self._cipher_or_default().encrypt(token_to_use)
         row.token_state = TokenState.OK
         row.token_error = None
         self.db.add(row)
-        if new_token:
-            from app.services.server_event_sender import resume_paused
+        # The pair just passed Check with Meta: whatever paused the Market's
+        # Server Events is fixed, so the waiting ones go out (spec §3.2).
+        from app.services.server_event_sender import resume_paused
 
-            resume_paused(self.db, tenant.id, market_id)
+        resume_paused(self.db, tenant.id, market_id)
         self.db.commit()
         logger.info("markets.pixel_saved", {"tenantId": str(tenant.id), "marketId": market_id, "pixelId": pixel_id})
         queue_publish(self.db, tenant.id)

@@ -14,7 +14,7 @@ test("a Relay is handed to the backend with its Origin, IP and user agent", asyn
   const response = await receiveRelay(
     relayRequest('{"v":1}', {
       origin: "https://dontmiss.bg",
-      "x-forwarded-for": "203.0.113.7, 10.0.0.1",
+      "x-forwarded-for": "203.0.113.7",
       "user-agent": "Mozilla/5.0",
     }),
     { forward: async (relay) => forwarded.push(relay) },
@@ -51,8 +51,12 @@ test("a backend failure still answers 204: the storefront can't act on it", asyn
   assert.deepEqual(errors, ["relay_forward_failed"]);
 });
 
-test("clientIp prefers the first X-Forwarded-For hop, then X-Real-IP", () => {
-  assert.equal(clientIp(new Headers({ "x-forwarded-for": " 1.2.3.4 , 5.6.7.8" })), "1.2.3.4");
+test("clientIp reads X-Forwarded-For, then X-Real-IP", () => {
+  assert.equal(clientIp(new Headers({ "x-forwarded-for": " 1.2.3.4 " })), "1.2.3.4");
   assert.equal(clientIp(new Headers({ "x-real-ip": "9.9.9.9" })), "9.9.9.9");
   assert.equal(clientIp(new Headers()), null);
+});
+
+test("clientIp ignores a client-forged first hop and takes the hop our proxy added", () => {
+  assert.equal(clientIp(new Headers({ "x-forwarded-for": "6.6.6.6, 203.0.113.7" })), "203.0.113.7");
 });

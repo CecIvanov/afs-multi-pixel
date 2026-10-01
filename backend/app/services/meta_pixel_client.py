@@ -1,6 +1,9 @@
-"""Check with Meta: can this Conversions API token read this pixel? (spec §4)"""
+"""Meta's Graph API: Check with Meta (can this Conversions API token read this
+pixel? spec §4) and sending Server Events to the Conversions API (spec §3.2)."""
 
 from __future__ import annotations
+
+from typing import Any
 
 import httpx
 
@@ -25,3 +28,19 @@ def check_pixel_with_meta(pixel_id: str, token: str) -> PixelCheck:
     except ValueError:
         body = {}
     return interpret_pixel_check(pixel_id, response.status_code, body if isinstance(body, dict) else {})
+
+
+def post_events(pixel_id: str, body: dict[str, Any]):
+    """POST /<pixel>/events. Never raises: an unreachable Meta is status 0."""
+    from app.services.server_event_sender import MetaAnswer
+
+    try:
+        with httpx.Client(transport=_transport, timeout=20.0) as client:
+            response = client.post(f"{GRAPH_URL}/{pixel_id}/events", json=body)
+    except httpx.HTTPError as exc:
+        return MetaAnswer(status=0, body={"error": {"message": f"Meta couldn't be reached: {exc.__class__.__name__}"}})
+    try:
+        payload = response.json()
+    except ValueError:
+        payload = {}
+    return MetaAnswer(status=response.status_code, body=payload if isinstance(payload, dict) else {})

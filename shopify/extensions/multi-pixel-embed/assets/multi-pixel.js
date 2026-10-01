@@ -18,13 +18,7 @@
     return;
   }
 
-  document.cookie =
-    MARKET_COOKIE + '=' + encodeURIComponent(config.marketId || '') + '; path=/; max-age=2592000; SameSite=Lax';
-
-  // A Market with no pixel sends nothing (spec §2).
-  if (!config.pixelId) return;
-
-  var pixelId = String(config.pixelId);
+  var pixelId = config.pixelId ? String(config.pixelId) : null;
   var ids = function (list) {
     return (list || []).map(String);
   };
@@ -157,6 +151,12 @@
   }
 
   function sendPageEvents() {
+    // The Market for the Web Pixel's AddToCart: written once consent is given, on
+    // every page, so moving to another Market (mapped or not) updates it.
+    document.cookie =
+      MARKET_COOKIE + '=' + encodeURIComponent(config.marketId || '') + '; path=/; max-age=2592000; SameSite=Lax';
+    // A Market with no pixel sends nothing (spec §2).
+    if (!pixelId) return;
     loadMetaPixel();
     track('PageView');
 
@@ -185,7 +185,6 @@
       track('ViewContent', {
         content_ids: ids(config.collection.productIds),
         content_type: 'product_group',
-        content_category: config.collection.name,
       });
     }
 
