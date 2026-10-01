@@ -62,7 +62,7 @@ Inherited from the POC and unchanged ([POC map](../multi-pixel/map.md)):
 ### 3.2 Relay and Server Events ([17](issues/17-relay-reliability.md))
 
 1. Every Browser Event also goes to the backend as a **Relay** (`POST /api/events`), encrypted with RSA-OAEP + AES-GCM using the app's public key.
-2. The endpoint decrypts and validates it, **stores** it in Postgres and answers. It sends nothing itself.
+2. The endpoint (public, on the Node BFF, which hands it to the backend's internal API) decrypts and validates it, **stores** it in Postgres and answers. It sends nothing itself.
    - It rejects requests whose Origin isn't one of the shop's storefront domains, unknown shops, and market → pixel pairs that aren't in the mapping.
    - It's rate-limited per shop and per IP; the numbers are set during the build.
 3. A **worker** sends stored events to `graph.facebook.com/v26.0/<pixel>/events` with the same event ID, IP, user agent and `fbp`/`fbc`, the Market's token, and the optional test event code.
@@ -99,7 +99,10 @@ Variant C, "Market health", is the chosen design. Prototype: branch `prototype/a
   - The **UAT App** (custom distribution, test stores only).
   - The **Production App** (public listing).
   - Each has its own app config, client ID and deployment.
-- **Admin API** `2026-10`, embedded app, Shopify React Router app template, Node/TypeScript, Prisma.
+- **Stack: the user's ShopifyAppTemplate** (decided 2026-10-01, replacing "Node/TypeScript + Prisma only"):
+  - `shopify/`: a Node React Router BFF for OAuth, the embedded admin, webhook receipt and the public Relay endpoint. Prisma is used for the `Session` table only.
+  - `backend/`: Python (FastAPI, SQLAlchemy + Alembic, Celery + Redis) with the durable DB-backed job queue, billing reconcile, GDPR redaction and offline-token auto-refresh. It's never internet-exposed; the BFF calls it with `X-Internal-Key`.
+  - Admin API `2026-10`. The template ships `2025-10`, and reaching `2026-10` needs the Shopify Node libraries upgraded.
 - **Scopes:** `read_markets`, `write_pixels`, `read_customer_events`, `read_orders`. Confirm during the build whether reading the shop's domains needs more.
 - **Extensions:**
   - A theme app embed (Liquid + `fbevents.js`).
@@ -116,7 +119,7 @@ Variant C, "Market health", is the chosen design. Prototype: branch `prototype/a
   - The app never holds amounts. There's no feature gating.
 - **Protected customer data:** Level 2 for **email, phone, name, address**, declared in the Partner Dashboard before submission. They're used only for the Server Purchase.
 
-## 6. Data model (Postgres, the app's own database and role)
+## 6. Data model (Postgres, the app's own database and role; SQLAlchemy models + Alembic in `backend/`, every table tenant-scoped)
 
 | Table | Holds | Notes |
 |---|---|---|
@@ -125,11 +128,11 @@ Variant C, "Market health", is the chosen design. Prototype: branch `prototype/a
 | `Market` | shop, numeric Market ID, name, type (Region / B2B / …), status (Active / Draft), first seen | the re-fetched Market list; "new" = no pixel and recently first seen |
 | `MarketPixel` | shop, Market ID, pixel ID, pixel name, **encrypted** token, test event code, token state (ok / rejected) | the Pixel Mapping; the pair is mandatory |
 | `AppKey` | Relay key pair, private key **encrypted** | generated once, republished on app start ([21](issues/21-security-and-operations.md)) |
-| `Webhook` | shop, topic, Shopify webhook ID (deduplicates redeliveries), payload, status (received, processed, failed), attempts, next attempt, timestamps | the inbox for every webhook; `orders/create` payloads are hashed or deleted once processed; deleted after 30 days |
+| `Webhook` | **the template's durable job queue** (dedupe, priority, backoff, dead-letter, stale-reaper): shop, topic, Shopify webhook ID (deduplicates redeliveries), payload, status (received, processed, failed), attempts, next attempt, timestamps | the inbox for every webhook; `orders/create` payloads are hashed or deleted once processed; deleted after 30 days |
 | `Event` | shop, source (Relay / webhook), event name, event ID, Market ID, pixel ID, consent, payload for Meta, status (received, sent, skipped, waiting, rejected, failed, paused), attempts, next attempt, Meta's answer, timestamps | the queue **and** the event log; holds no raw personal data; deleted after 30 days |
 | `PendingPurchase` | shop, order ID, browser half, **hashed** order customer data | expires after 7 days; the POC's raw order JSON must not carry over |
 
-Encryption at rest uses an AES-256-GCM helper modelled on AdFeed Studio's `packages/meta-connector/src/crypto.ts`, with this app's own key ([08](issues/08-afs-stack-reuse.md)).
+Encryption at rest uses an AES-256-GCM helper in the Python backend, a port of AdFeed Studio's `packages/meta-connector/src/crypto.ts`, with this app's own key ([08](issues/08-afs-stack-reuse.md)).
 
 ## 7. Privacy and compliance ([13](issues/13-compliance-plan.md), [03](issues/03-app-store-requirements.md))
 
@@ -149,7 +152,7 @@ Encryption at rest uses an AES-256-GCM helper modelled on AdFeed Studio's `packa
 
 ## 8. Hosting and operations ([12](issues/12-hosting-data-secrets.md), [21](issues/21-security-and-operations.md))
 
-- A Docker app (web + worker) on a VPS behind Caddy, one instance per app (UAT and Production).
+- The template's Docker stack (ui, api, worker, beat, jobs, Postgres, Redis) on a VPS behind Caddy, one stack per app (UAT and Production; the template's optional `dev` app is for local development only).
 - Postgres with the app's own database and role, possibly on an existing AFS Postgres server. Prisma migrations.
 - The Relay key pair is generated once, stored encrypted and **republished automatically on app start** (metafield + Web Pixel settings).
 - **Daily jobs:** re-fetch storefront domains and delete expired `PendingPurchase` rows and `Event` rows older than 30 days.
@@ -158,7 +161,7 @@ Encryption at rest uses an AES-256-GCM helper modelled on AdFeed Studio's `packa
 
 ## 9. Build and release
 
-- Built **from scratch on a clean git branch**. The POC (`shopify-app/`) is a reference only ([18](issues/18-poc-code-reuse.md)).
+- Built on branch `production` (from master, POC removed), starting from the ShopifyAppTemplate. The POC (`shopify-app/` on master) is a reference only ([18](issues/18-poc-code-reuse.md)).
 - **Automated tests** ([19](issues/19-test-strategy.md)): Relay decryption and validation, the Purchase join, Meta payload building (`content_ids`, hashing), GDPR webhooks, worker retry and pause.
 - **UAT App:** all other testing is manual, following a **release checklist** before every Production App release. The checklist includes:
   - Full Standard Funnel per Market.

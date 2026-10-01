@@ -1,6 +1,6 @@
 # AFS Multi Pixel v1: build backlog
 
-Sliced from the signed-off [spec](../spec.md) (2026-10-01). Each ticket is a thin end-to-end slice that can be tested on the UAT App. Tracker: local markdown, same conventions as the map (claim with `Assignee:`, `Blocked by:` lists ticket numbers). Work happens on the clean production branch; the POC (`shopify-app/`) is reference only.
+Sliced from the signed-off [spec](../spec.md) (2026-10-01). Each ticket is a thin end-to-end slice that can be tested on the UAT App. Tracker: local markdown, same conventions as the map (claim with `Assignee:`, `Blocked by:` lists ticket numbers). Work happens on branch `production`, which starts from the user's ShopifyAppTemplate (commit `c3265d2`); the POC (`shopify-app/` on master) is reference only. Tickets 01, 02 and 09 are mostly covered by the template; see their re-scope notes.
 
 **Rules every ticket follows** (from the spec): every Relay event and every webhook is stored in Postgres first and processed by the worker; no raw personal data is kept; tokens and keys are encrypted at rest; all testing on the UAT App; secrets never in git.
 
