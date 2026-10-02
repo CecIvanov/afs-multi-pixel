@@ -154,7 +154,8 @@ const STATUS_LABELS = {
   failed: "Failed",
   skipped: "Skipped",
 };
-const ALWAYS_SHOWN_STATUSES = ["sent", "held", "waiting", "rejected"];
+// Held, Failed and Skipped chips appear only when there are such events (as in the mockup).
+const ALWAYS_SHOWN_STATUSES = ["sent", "waiting", "rejected"];
 
 export function parseRange(value) {
   return RANGES.some((r) => r.key === value) ? value : "24h";
@@ -232,9 +233,10 @@ export function chartAxis(range) {
   return ["24 h ago", "18 h", "12 h", "6 h", "Now"];
 }
 
-export function statusChips(counts) {
-  const extra = Object.keys(STATUS_LABELS).filter((k) => !ALWAYS_SHOWN_STATUSES.includes(k) && counts[k]);
-  return [...ALWAYS_SHOWN_STATUSES, ...extra].map((key) => ({ key, label: STATUS_LABELS[key], count: counts[key] ?? 0 }));
+export function statusChips(counts, selected = "") {
+  return Object.keys(STATUS_LABELS)
+    .filter((key) => ALWAYS_SHOWN_STATUSES.includes(key) || counts[key] || key === selected)
+    .map((key) => ({ key, label: STATUS_LABELS[key], count: counts[key] ?? 0 }));
 }
 
 export function pageLabel({ page, page_size, total, rows }) {

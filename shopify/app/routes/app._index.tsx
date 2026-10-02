@@ -100,7 +100,7 @@ export default function Markets() {
   };
 
   return (
-    <s-page heading="Markets">
+    <s-page heading="Markets" inlineSize="large">
       <s-stack gap="base">
         <s-stack direction="inline" gap="small-200" alignItems="center" justifyContent="space-between">
           {appData?.billingEnabled ? (
@@ -269,7 +269,7 @@ function MarketTile({ market, onOpen }: { market: MarketRecord; onOpen: () => vo
         <s-badge tone={badge.tone}>{badge.label}</s-badge>
       </div>
       <div>
-        <s-text color="subdued">Pixel</s-text> <span className={styles.mono}>{market.pixel.pixel_id}</span>
+        <s-text color="subdued">Pixel</s-text> <span className={styles.monoDark}>{market.pixel.pixel_id}</span>
       </div>
       <Spark series={stats.series} tone={state === "token_problem" ? "crit" : state === "deactivated" ? "off" : "ok"} />
       <div className={styles.counts}>

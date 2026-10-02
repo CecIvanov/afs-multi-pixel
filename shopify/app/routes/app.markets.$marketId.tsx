@@ -155,7 +155,7 @@ export default function MarketPage() {
   const activated = activation.data?.intent === "save" && activation.data.ok && activation.data.activated;
 
   return (
-    <s-page heading={market.name}>
+    <s-page heading={market.name} inlineSize="large">
       <s-stack gap="base">
         <nav aria-label="Breadcrumb" className={styles.crumbs}>
           <Link to="/app">Markets</Link>
@@ -191,18 +191,19 @@ function MarketHeader({ market, loadedAt }: { market: MarketRecord; loadedAt?: s
   const facts = [regionsLabel(market.regions), ...marketLabels(market).map((l) => `${l} Market`)].filter(Boolean);
   return (
     <div className={styles.header}>
-      <div className={styles.grow}>
-        <s-stack direction="inline" gap="small-200" alignItems="center">
+      <div className={styles.titleBlock}>
+        <div className={styles.titleRow}>
+          <h1 className={styles.title}>{market.name}</h1>
           <s-badge tone={badge.tone}>{badge.label}</s-badge>
-          <s-text color="subdued">
-            {facts.join(" · ")}
-            {market.pixel ? (
-              <>
-                {facts.length ? " · " : ""}Pixel <span className={styles.mono}>{market.pixel.pixel_id}</span>
-              </>
-            ) : null}
-          </s-text>
-        </s-stack>
+        </div>
+        <div className={styles.subtitle}>
+          {facts.join(" · ")}
+          {market.pixel ? (
+            <>
+              {facts.length ? " · " : ""}Pixel <span className={styles.monoDark}>{market.pixel.pixel_id}</span>
+            </>
+          ) : null}
+        </div>
       </div>
       {loadedAt ? (
         <s-stack direction="inline" gap="small-200" alignItems="center">
@@ -216,6 +217,11 @@ function MarketHeader({ market, loadedAt }: { market: MarketRecord; loadedAt?: s
       ) : null}
     </div>
   );
+}
+
+function ConnectionBadge({ market }: { market: MarketRecord }) {
+  const badge = BADGE[marketTileState(market) as keyof typeof BADGE];
+  return badge ? <s-badge tone={badge.tone}>{badge.label}</s-badge> : null;
 }
 
 function ConfiguredMarket({
@@ -318,9 +324,12 @@ function ConfiguredMarket({
       <div className={styles.split}>
         <EventsByType detail={detail} query={query} />
         <section id="connection" className={`${styles.card} ${styles.side}`} aria-labelledby="connection-h">
-          <h2 id="connection-h" className={styles.cardTitle}>
-            Pixel and Conversions API
-          </h2>
+          <div className={styles.cardHead}>
+            <h2 id="connection-h" className={styles.cardTitle}>
+              Pixel and Conversions API
+            </h2>
+            <ConnectionBadge market={market} />
+          </div>
           {editing ? (
             <PixelForm market={market} onDone={() => setEditing(false)} />
           ) : (
@@ -451,7 +460,7 @@ function ConnectionPanel({
         </s-button>
       </div>
       <div className={styles.divider}>
-        <div className={styles.between}>
+        <div className={styles.toggleRow}>
           <div>
             <b>{pixel.active ? "Pixel is active" : "Pixel is deactivated"}</b>
             <div className={styles.note}>
@@ -687,7 +696,7 @@ function EventsTable({ events, detail, query }: { events: EventPageRecord; detai
         <div role="group" aria-label="Filter by status" className={styles.chips}>
           <span className={styles.note}>Status</span>
           <Chip to={withQuery(query, { status: "" })} pressed={!query.status} label="All" count={statusAll} />
-          {statusChips(events.status_counts).map((chip) => (
+          {statusChips(events.status_counts, query.status).map((chip) => (
             <Chip
               key={chip.key}
               to={withQuery(query, { status: chip.key })}

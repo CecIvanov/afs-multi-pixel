@@ -261,14 +261,21 @@ test("chartAxis labels hours for a day and days otherwise", () => {
   assert.deepEqual(chartAxis("30d"), ["30 days ago", "15 days ago", "Today"]);
 });
 
-test("statusChips: Sent, Held, Waiting, Rejected always, others when present", () => {
+test("statusChips: Sent, Waiting, Rejected always; Held and the rest when present or selected", () => {
   assert.deepEqual(statusChips({ sent: 4, failed: 1 }), [
     { key: "sent", label: "Sent", count: 4 },
-    { key: "held", label: "Held", count: 0 },
     { key: "waiting", label: "Waiting", count: 0 },
     { key: "rejected", label: "Rejected", count: 0 },
     { key: "failed", label: "Failed", count: 1 },
   ]);
+  assert.deepEqual(
+    statusChips({ held: 2 }).map((c) => c.key),
+    ["sent", "held", "waiting", "rejected"],
+  );
+  assert.deepEqual(
+    statusChips({}, "held").map((c) => c.key),
+    ["sent", "held", "waiting", "rejected"],
+  );
 });
 
 test("pageLabel says which events are shown", () => {
