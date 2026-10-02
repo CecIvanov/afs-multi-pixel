@@ -8,7 +8,7 @@
 client_id = "cbf79027737c8bcbd7657e9af8328383"
 name = "AFS Multi Pixel (UAT)"
 handle = "afs-multi-pixel-uat"
-application_url = "https://multi-pixel-uat.adfeedstudio.com/app"
+application_url = "https://multi-pixel-uat.adfeedstudio.com"
 embedded = true
 
 [access_scopes]

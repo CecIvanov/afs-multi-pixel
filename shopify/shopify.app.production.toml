@@ -8,7 +8,7 @@
 client_id = "4e22a50fb4b433f72347339801cf7e3f"
 name = "AFS Multi Pixel"
 handle = "afs-multi-pixel"
-application_url = "https://multi-pixel-prd.adfeedstudio.com/app"
+application_url = "https://multi-pixel-prd.adfeedstudio.com"
 embedded = true
 
 [access_scopes]

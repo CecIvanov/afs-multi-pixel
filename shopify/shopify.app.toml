@@ -8,7 +8,7 @@
 client_id = ""
 name = "AFS Multi Pixel"
 handle = "afs-multi-pixel"
-application_url = "https://example.com/app"
+application_url = "https://example.com"
 embedded = true
 
 [access_scopes]

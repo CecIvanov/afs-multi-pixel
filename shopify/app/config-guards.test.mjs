@@ -122,6 +122,16 @@ test("webhook subscriptions agree across every env toml and each URI has a route
   }
 });
 
+// Shopify resolves a relative webhook uri against application_url, so ".../app"
+// sent orders/create to /app/webhooks/orders/create (404). Keep it the bare host;
+// the _index route forwards Shopify's ?shop=... launch to /app.
+test("application_url is a bare host, so relative webhook URIs reach /webhooks/*", () => {
+  for (const file of ENV_TOMLS) {
+    const url = tomlValue(readFileSync(join(shopifyDir, file), "utf8"), "application_url");
+    assert.match(url, /^https:\/\/[^/]+$/, `${file} application_url must have no path`);
+  }
+});
+
 test("the v1 webhook topics are all subscribed", () => {
   const subs = webhookSubscriptions(readFileSync(join(shopifyDir, ENV_TOMLS[0]), "utf8")).join("\n");
   for (const topic of [
