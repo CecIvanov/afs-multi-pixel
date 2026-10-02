@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { ActionFunctionArgs, LoaderFunctionArgs, ShouldRevalidateFunction } from "react-router";
-import { Form, Link, useFetcher, useLoaderData } from "react-router";
+import { Link, useFetcher, useLoaderData, useNavigate } from "react-router";
 import { authenticate } from "../shopify.server";
 import {
   checkMarketPixel,
@@ -668,18 +668,7 @@ function EventsTable({ events, detail, query }: { events: EventPageRecord; detai
           <h2 id="table-h" className={styles.cardTitle}>
             Events
           </h2>
-          <Form method="get" className={styles.search} preventScrollReset>
-            {query.range !== "24h" ? <input type="hidden" name="range" value={query.range} /> : null}
-            {query.event ? <input type="hidden" name="event" value={query.event} /> : null}
-            {query.status ? <input type="hidden" name="status" value={query.status} /> : null}
-            <s-search-field
-              label="Search"
-              labelAccessibilityVisibility="exclusive"
-              name="q"
-              defaultValue={query.q}
-              placeholder="Event ID or #order number"
-            />
-          </Form>
+          <EventSearch query={query} />
         </div>
         <div role="group" aria-label="Filter by event" className={styles.chips}>
           <Chip to={withQuery(query, { event: "" })} pressed={!query.event} label="All events" count={allCount} />
@@ -753,6 +742,37 @@ function EventsTable({ events, detail, query }: { events: EventPageRecord; detai
         </div>
       </div>
     </section>
+  );
+}
+
+const SEARCH_DELAY_MS = 350;
+
+/** Searches as the merchant types. Enter in s-search-field doesn't submit a
+ * surrounding form, so the URL is updated directly after a short pause. */
+function EventSearch({ query }: { query: Query }) {
+  const navigate = useNavigate();
+  const [term, setTerm] = useState(query.q);
+  useEffect(() => setTerm(query.q), [query.q]);
+  useEffect(() => {
+    if (term.trim() === query.q) return;
+    const timer = setTimeout(
+      () => navigate(withQuery(query, { q: term.trim() }), { replace: true, preventScrollReset: true }),
+      SEARCH_DELAY_MS,
+    );
+    return () => clearTimeout(timer);
+  }, [term, query, navigate]);
+
+  return (
+    <div className={styles.search}>
+      <s-search-field
+        label="Search"
+        labelAccessibilityVisibility="exclusive"
+        value={term}
+        placeholder="Event ID or #order number"
+        onInput={(e) => setTerm(value(e))}
+        onChange={(e) => setTerm(value(e))}
+      />
+    </div>
   );
 }
 
