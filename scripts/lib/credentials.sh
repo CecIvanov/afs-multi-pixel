@@ -22,6 +22,12 @@ require_credentials_file() {
 export_stack_credentials() {
   local stack="$1"
   require_credentials_file "${stack}" || return 1
+  # The client ID moved to .env.<stack>; a leftover (often empty) line here would
+  # override it, since the shell environment wins over docker compose --env-file.
+  if grep -qE '^[[:space:]]*SHOPIFY_API_KEY=' "${_CRED_ROOT}/.credentials.${stack}"; then
+    echo "SHOPIFY_API_KEY now lives in .env.${stack}: remove it from .credentials.${stack}" >&2
+    return 1
+  fi
   set -a
   # shellcheck disable=SC1090
   source "${_CRED_ROOT}/.credentials.${stack}"

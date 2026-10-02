@@ -5,9 +5,9 @@
 # Keep [access_scopes] and [webhooks] identical to shopify.app.toml — Shopify reads
 # each toml standalone, so scope/webhook changes must be mirrored across all envs.
 
-client_id = ""
+client_id = "4e22a50fb4b433f72347339801cf7e3f"
 name = "AFS Multi Pixel"
-handle = "afs-multi-pixel-production"
+handle = "afs-multi-pixel"
 application_url = "https://multi-pixel-prd.adfeedstudio.com/app"
 embedded = true
 

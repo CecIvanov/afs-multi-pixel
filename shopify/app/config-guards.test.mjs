@@ -150,3 +150,17 @@ test("committed .env.uat / .env.production define no secret from .credentials.ex
     assert.deepEqual(leaked, [], `${file} defines secrets; move them to .credentials.<stack> on the VPS`);
   }
 });
+
+// The client ID lives in two places per deployed stack: the app's toml (Shopify
+// CLI) and .env.<stack> (the running app). They must name the same app.
+test("SHOPIFY_API_KEY in .env.uat / .env.production matches the toml client_id", () => {
+  for (const [env, toml] of [
+    [".env.uat", "shopify/shopify.app.uat.toml"],
+    [".env.production", "shopify/shopify.app.production.toml"],
+  ]) {
+    const apiKey = capture(readRepoFile(env), /^SHOPIFY_API_KEY=(.*)$/m, env);
+    const clientId = capture(readRepoFile(toml), /^client_id = "(.*)"$/m, toml);
+    assert.ok(clientId, `${toml} has no client_id`);
+    assert.equal(apiKey, clientId, `${env} SHOPIFY_API_KEY != ${toml} client_id`);
+  }
+});
