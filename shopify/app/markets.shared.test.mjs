@@ -36,12 +36,13 @@ const market = (over = {}) => ({
   ...over,
 });
 
-test("a pixel ID is 15 or 16 digits, ignoring pasted spaces", () => {
+test("a pixel ID is up to 20 digits of any length, ignoring pasted spaces", () => {
   assert.equal(isValidPixelId("1290457710338842"), true);
   assert.equal(isValidPixelId("129045771033884"), true);
+  assert.equal(isValidPixelId("12904577103388421"), true);
+  assert.equal(isValidPixelId("12904577103388"), true);
   assert.equal(isValidPixelId(" 1290 4577 1033 8842 "), true);
-  assert.equal(isValidPixelId("12904577103388"), false);
-  assert.equal(isValidPixelId("12904577103388421"), false);
+  assert.equal(isValidPixelId("123456789012345678901"), false);
   assert.equal(isValidPixelId("12904577103388a2"), false);
   assert.equal(isValidPixelId(""), false);
   assert.equal(normalizePixelId(" 1290 4577 1033 8842 "), "1290457710338842");
@@ -95,7 +96,7 @@ test("a token is required unless a good one is already saved", () => {
 test("Check with Meta needs a valid pixel ID and a token (typed or saved)", () => {
   assert.equal(canCheckWithMeta(market(), { pixelId: "1290457710338842", token: "EAAJ..." }), true);
   assert.equal(canCheckWithMeta(market(), { pixelId: "1290457710338842", token: " " }), false);
-  assert.equal(canCheckWithMeta(market(), { pixelId: "123", token: "EAAJ..." }), false);
+  assert.equal(canCheckWithMeta(market(), { pixelId: "1290-4577", token: "EAAJ..." }), false);
   assert.equal(canCheckWithMeta(market({ pixel: pixel() }), { pixelId: "1290457710338842", token: "" }), true);
 });
 

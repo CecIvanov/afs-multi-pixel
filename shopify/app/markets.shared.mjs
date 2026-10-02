@@ -1,9 +1,10 @@
 // Pure Market health page logic (no I/O) so node --test covers the tile states,
 // labels, summary and the pixel ID + token rules the editor enforces.
 
-const PIXEL_ID = /^\d{15,16}$/;
+// Meta IDs are 64-bit numbers (up to 20 digits) with no fixed length; Check with Meta is the real test.
+const PIXEL_ID = /^\d{1,20}$/;
 const REGIONS_SHOWN = 3;
-export const PIXEL_ID_HINT = "A pixel ID is 15 or 16 digits. Copy it from Events Manager → Data sources.";
+export const PIXEL_ID_HINT = "A pixel ID is digits only. Copy it from Events Manager → Data sources.";
 
 /** Pasted pixel IDs often carry spaces; Meta's IDs are digits only. */
 export function normalizePixelId(value) {

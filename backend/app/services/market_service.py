@@ -24,7 +24,8 @@ from app.services.token_cipher import TokenCipher
 
 logger = get_logger().child({"component": "markets"})
 
-PIXEL_ID = re.compile(r"^\d{15,16}$")
+# Meta IDs are 64-bit numbers (up to 20 digits) with no fixed length; the Graph API check is the real test.
+PIXEL_ID = re.compile(r"^\d{1,20}$")
 # An unmapped Market first seen after the shop's first sync stays "new" this long.
 NEW_MARKET_WINDOW = timedelta(days=7)
 
@@ -321,5 +322,5 @@ class MarketService:
 def _valid_pixel_id(pixel_id: str) -> str:
     pixel_id = re.sub(r"\s", "", pixel_id or "")
     if not PIXEL_ID.match(pixel_id):
-        raise PixelValidationError("A pixel ID is 15 or 16 digits. Copy it from Events Manager → Data sources.")
+        raise PixelValidationError("A pixel ID is digits only. Copy it from Events Manager → Data sources.")
     return pixel_id

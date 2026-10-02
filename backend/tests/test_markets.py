@@ -219,8 +219,8 @@ def test_saving_stores_the_pixel_and_the_token_encrypted(db):
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("pixel_id", ["", "12345678901234", "12345678901234567", "12345678901234a"])
-def test_saving_refuses_a_pixel_id_that_isnt_15_or_16_digits(db, pixel_id):
+@pytest.mark.parametrize("pixel_id", ["", "123456789012345678901", "12345678901234a"])
+def test_saving_refuses_a_pixel_id_that_isnt_up_to_20_digits(db, pixel_id):
     tenant = _tenant(db)
     service = _service(db)
     service.sync(tenant)
