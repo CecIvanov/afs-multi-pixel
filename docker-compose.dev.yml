@@ -1,10 +1,31 @@
 # Development overlay — used by `./scripts/start.sh dev` with .env.dev.
-# The base compose already runs Postgres + Redis as containers, so dev is
-# self-contained. Add source-mount / hot-reload here later if desired.
+# Dev is self-contained: it runs its own Postgres container (UAT and production
+# use the VPS's Postgres instead; see docker-compose.yml). The api waits for it.
 
 services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: ${APP_IMAGE_PREFIX:-afsmultipixel}-postgres-${APP_ENV:-dev}
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER:-afsmultipixel_dev}
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD:-test123}
+      POSTGRES_DB: ${DB_NAME:-afsmultipixel_dev}
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-afsmultipixel_dev} -d ${DB_NAME:-afsmultipixel_dev}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
   api:
     restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
   worker:
     restart: unless-stopped
   beat:
@@ -13,3 +34,7 @@ services:
     restart: unless-stopped
   ui:
     restart: unless-stopped
+
+volumes:
+  pgdata:
+    name: ${APP_IMAGE_PREFIX:-afsmultipixel}-pgdata-${APP_ENV:-dev}

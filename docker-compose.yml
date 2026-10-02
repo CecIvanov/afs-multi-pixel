@@ -1,12 +1,14 @@
-# Base stack: postgres + redis + api + worker + beat + ui.
+# Base stack: redis + api + worker + beat + jobs + ui.
 #
 # Identity is interpolated from environment exported by scripts/lib/config.sh out
 # of app.config.json (APP_IMAGE_PREFIX, DB_NAME, DB_USER, APP_CELERY_KEY_PREFIX)
-# plus .env.<stack> / .credentials.<stack>. Bring it up with ./scripts/start-dev.sh.
+# plus .env.<stack> / .credentials.<stack>. Bring it up with ./scripts/start.sh.
 #
-# Postgres and Redis run as containers here for a self-contained dev/test stack.
-# For production you may externalize them (host Postgres via host.docker.internal,
-# a shared Redis) — see docker-compose.prod.yml and the README.
+# Postgres is NOT in the base stack. UAT and production use the VPS's own Postgres:
+# containers reach it at host.docker.internal (mapped to the host by extra_hosts),
+# DATABASE_HOST/DATABASE_PORT in .env.<stack>. Dev runs a Postgres container from
+# docker-compose.dev.yml (DATABASE_HOST=postgres, the default). Redis runs as a
+# container per stack.
 name: ${APP_IMAGE_PREFIX:-afsmultipixel}-${APP_ENV:-dev}
 
 x-backend-image: &backend-image
@@ -15,11 +17,15 @@ x-backend-image: &backend-image
     context: .
     dockerfile: backend/Dockerfile
 
+# Lets containers reach services on the VPS itself (its Postgres) by this name.
+x-host-gateway: &host-gateway
+  - "host.docker.internal:host-gateway"
+
 x-backend-env: &backend-env
   APP_ENV: ${APP_ENV:-dev}
   APP_NAME: ${APP_NAME:-}
   LOG_LEVEL: ${LOG_LEVEL:-info}
-  DATABASE_URL: postgresql://${DB_USER:-afsmultipixel_dev}:${DATABASE_PASSWORD:-test123}@postgres:5432/${DB_NAME:-afsmultipixel_dev}
+  DATABASE_URL: postgresql://${DB_USER:-afsmultipixel_dev}:${DATABASE_PASSWORD:-test123}@${DATABASE_HOST:-postgres}:${DATABASE_PORT:-5432}/${DB_NAME:-afsmultipixel_dev}
   REDIS_URL: redis://redis:6379/0
   CELERY_TASK_QUEUE: ${APP_CELERY_KEY_PREFIX:-afsmultipixel}-${APP_ENV:-dev}
   CELERY_REDIS_KEY_PREFIX: "${APP_CELERY_KEY_PREFIX:-afsmultipixel}-${APP_ENV:-dev}:"
@@ -41,24 +47,6 @@ x-backend-env: &backend-env
   SHOPIFY_PARTNER_API_VERSION: ${SHOPIFY_PARTNER_API_VERSION:-2026-07}
 
 services:
-  postgres:
-    image: postgres:16-alpine
-    container_name: ${APP_IMAGE_PREFIX:-afsmultipixel}-postgres-${APP_ENV:-dev}
-    restart: unless-stopped
-    environment:
-      POSTGRES_USER: ${DB_USER:-afsmultipixel_dev}
-      POSTGRES_PASSWORD: ${DATABASE_PASSWORD:-test123}
-      POSTGRES_DB: ${DB_NAME:-afsmultipixel_dev}
-    ports:
-      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-afsmultipixel_dev} -d ${DB_NAME:-afsmultipixel_dev}"]
-      interval: 5s
-      timeout: 5s
-      retries: 12
-
   redis:
     image: redis:7-alpine
     container_name: ${APP_IMAGE_PREFIX:-afsmultipixel}-redis-${APP_ENV:-dev}
@@ -73,6 +61,7 @@ services:
 
   api:
     <<: *backend-image
+    extra_hosts: *host-gateway
     container_name: ${APP_IMAGE_PREFIX:-afsmultipixel}-api-${APP_ENV:-dev}
     restart: unless-stopped
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "${API_WORKERS:-1}", "--no-access-log"]
@@ -80,8 +69,6 @@ services:
       <<: *backend-env
       PROMETHEUS_MULTIPROC_DIR: /tmp/prometheus_multiproc
     depends_on:
-      postgres:
-        condition: service_healthy
       redis:
         condition: service_healthy
     ports:
@@ -95,6 +82,7 @@ services:
 
   worker:
     <<: *backend-image
+    extra_hosts: *host-gateway
     container_name: ${APP_IMAGE_PREFIX:-afsmultipixel}-worker-${APP_ENV:-dev}
     restart: unless-stopped
     # Celery prefork has no HTTP server, so run the /metrics sidecar alongside it.
@@ -123,6 +111,7 @@ services:
 
   beat:
     <<: *backend-image
+    extra_hosts: *host-gateway
     container_name: ${APP_IMAGE_PREFIX:-afsmultipixel}-beat-${APP_ENV:-dev}
     restart: unless-stopped
     command: ["celery", "-A", "app.workers.celery_app.celery_app", "beat", "-l", "info"]
@@ -136,6 +125,7 @@ services:
   # Durable job-queue worker (webhook processing). Separate from Celery.
   jobs:
     <<: *backend-image
+    extra_hosts: *host-gateway
     container_name: ${APP_IMAGE_PREFIX:-afsmultipixel}-jobs-${APP_ENV:-dev}
     restart: unless-stopped
     command: ["python", "-m", "app.workers.job_pool"]
@@ -147,6 +137,7 @@ services:
         condition: service_healthy
 
   ui:
+    extra_hosts: *host-gateway
     image: ${APP_IMAGE_PREFIX:-afsmultipixel}/ui:${APP_ENV:-dev}
     build:
       context: .
@@ -162,7 +153,7 @@ services:
       BACKEND_INTERNAL_URL: http://api:8000
       INTERNAL_API_KEY: ${INTERNAL_API_KEY:-dev-internal-key}
       # Prisma (Shopify session storage) shares the same Postgres.
-      DATABASE_URL: postgresql://${DB_USER:-afsmultipixel_dev}:${DATABASE_PASSWORD:-test123}@postgres:5432/${DB_NAME:-afsmultipixel_dev}
+      DATABASE_URL: postgresql://${DB_USER:-afsmultipixel_dev}:${DATABASE_PASSWORD:-test123}@${DATABASE_HOST:-postgres}:${DATABASE_PORT:-5432}/${DB_NAME:-afsmultipixel_dev}
       # Shopify app credentials (from the Partner Dashboard) — required to serve
       # the embedded admin. SCOPES must match shopify.app.toml.
       SHOPIFY_API_KEY: ${SHOPIFY_API_KEY:-}
@@ -198,7 +189,5 @@ services:
       start_period: 40s
 
 volumes:
-  pgdata:
-    name: ${APP_IMAGE_PREFIX:-afsmultipixel}-pgdata-${APP_ENV:-dev}
   redisdata:
     name: ${APP_IMAGE_PREFIX:-afsmultipixel}-redisdata-${APP_ENV:-dev}

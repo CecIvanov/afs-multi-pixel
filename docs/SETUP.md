@@ -67,6 +67,27 @@ the VPS from `.credentials.example` (never committed), `npm run config:link:<env
 then `./scripts/start.sh <env>` and `npm run deploy:<env>`. The UAT App is a custom app with no billing (`SHOPIFY_BILLING_MODE=disabled`):
 every shop counts as subscribed and the admin has no Plan page.
 
+## 7a. Deploy UAT / production on the VPS
+
+UAT and production use the **VPS's own Postgres** (no Postgres container); each
+stack runs its own Redis container. The containers reach Postgres at
+`host.docker.internal:5432` (`DATABASE_HOST` / `DATABASE_PORT` in `.env.<stack>`),
+which docker-compose maps to the host's Docker bridge. On the VPS, once per stack:
+
+```bash
+cp .credentials.example .credentials.uat && chmod 600 .credentials.uat   # fill the secrets
+./scripts/db/setup.sh uat --provision-only     # role + database in the host Postgres (sudo)
+./scripts/db/allow-docker-access.sh uat        # pg_hba line for the containers; checks listen_addresses
+./scripts/start.sh uat                         # api migrates and seeds plans on start
+```
+
+Same with `production` (database and role `afsmultipixel`; UAT's are
+`afsmultipixel_uat`). If `allow-docker-access.sh` reports that Postgres doesn't
+listen on the Docker bridge, set `listen_addresses = 'localhost,172.17.0.1'` in
+`postgresql.conf` and restart Postgres; keep 5432 closed in the firewall.
+Caddy proxies the public URL to `127.0.0.1:<UI_PORT>` (3010 UAT, 3020 production).
+Nightly backups: `scripts/db/backup.sh <stack>` (cron line in the script).
+
 ## 6. Verify the install round-trip
 
 Install the app on a development store. On the backend:
