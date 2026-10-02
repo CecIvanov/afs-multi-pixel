@@ -8,7 +8,7 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
@@ -69,7 +69,9 @@ class TenantService:
             access_token_expires_at=access_token_expires_at,
             refresh_token_expires_at=refresh_token_expires_at,
             status=TenantStatus.ACTIVE,
-            installed_at=datetime.now(UTC),
+            # The database clock, like AsyncJob.created_at: the uninstall handler
+            # compares the two to spot a reinstall, so they must share one clock.
+            installed_at=func.now(),
             app_ui_locale=DEFAULT_APP_UI_LOCALE,
         )
         self.db.add(tenant)
@@ -137,7 +139,7 @@ class TenantService:
                 access_token_expires_at, refresh_token_expires_at,
             )
             tenant.status = TenantStatus.ACTIVE
-            tenant.installed_at = datetime.now(UTC)
+            tenant.installed_at = func.now()  # database clock, see create_tenant
             tenant.uninstalled_at = None
             self.db.commit()
             self.db.refresh(tenant)
