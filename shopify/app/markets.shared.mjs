@@ -252,8 +252,9 @@ export function lastCheckLabel(pixel, formatDate = formatUtc) {
     : { ok: false, text: `Refused · ${when}${pixel.last_check_error ? ` · ${pixel.last_check_error}` : ""}` };
 }
 
+/** The dataset's overview in Events Manager. Meta picks the business when the link carries none. */
 export function eventsManagerUrl(pixelId) {
-  return `https://business.facebook.com/events_manager2/list/pixel/${encodeURIComponent(pixelId)}/overview`;
+  return `https://eventsmanager.facebook.com/events_manager2/list/dataset/${encodeURIComponent(pixelId)}/overview`;
 }
 
 /** The grey "deactivated" notice, with any Server Events held since (7-day rule). */

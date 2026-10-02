@@ -17,6 +17,7 @@ import {
   tokenRequired,
   chartBars,
   deactivatedNote,
+  eventsManagerUrl,
   chartAxis,
   lastCheckLabel,
   notSentDetail,
@@ -302,5 +303,12 @@ test("deactivatedNote says what is held and when it drops", () => {
     deactivatedNote(off({ held: 2, held_until: "2026-10-09T10:29:33Z" }), (iso) => `<${iso}>`),
     "No browser or server events are sent for shoppers in Greece. The pixel ID and token stay saved, so you can turn it back on at any time. " +
       "2 server events are held and will be sent when you reactivate, if Meta accepts the token. Events still held on <2026-10-09T10:29:33Z> will be dropped.",
+  );
+});
+
+test("eventsManagerUrl opens the dataset's overview", () => {
+  assert.equal(
+    eventsManagerUrl("1134226218952173"),
+    "https://eventsmanager.facebook.com/events_manager2/list/dataset/1134226218952173/overview",
   );
 });
