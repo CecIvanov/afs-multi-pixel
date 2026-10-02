@@ -67,9 +67,10 @@ celery_app.conf.update(
             "schedule": timedelta(hours=1),
             "options": {"queue": settings.celery_task_queue},
         },
-        # Billing drift reconcile — catches plan changes made outside the app.
-        f"{settings.app_env}-billing-reconcile": {
-            "task": "app.workers.tasks.dispatch_billing_reconcile",
+        # The one plan's subscription, re-read from the Partner API — catches a
+        # cancellation made outside the app (spec §5).
+        f"{settings.app_env}-subscription-check": {
+            "task": "app.workers.tasks.dispatch_subscription_check",
             "schedule": crontab(hour=2, minute=0),
             "options": {"queue": settings.celery_task_queue},
         },

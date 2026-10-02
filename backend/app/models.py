@@ -280,8 +280,8 @@ class AsyncJobOperation(str, enum.Enum):
     PIXEL_MAPPING_PUBLISH = "pixel_mapping_publish"
     # Re-fetch the storefront hosts the Relay accepts as Origin.
     STOREFRONT_HOSTS_SYNC = "storefront_hosts_sync"
-    # app_subscriptions/update: is the subscription to the one plan still active?
-    SUBSCRIPTION_UPDATE = "subscription_update"
+    # (subscription_update, from migration 010, is unused: managed pricing sends no
+    # subscription webhooks after 2026-04-28; the Partner API is read instead.)
     EXAMPLE_OP = "example_op"
 
 

@@ -79,6 +79,14 @@ class Settings(BaseSettings):
     # The app's public URL (the Node BFF). The Relay endpoint published to the
     # storefront is <shopify_app_url>/api/events.
     shopify_app_url: str = ""
+    # Shopify App Pricing (managed pricing, spec §5): the one paid plan's exact
+    # handle, and the Partner API that reports a shop's subscription to it. The app
+    # GID and org ID come from .env.<stack>; the access token from .credentials.
+    billing_plan_handle: str = "light"
+    shopify_app_gid: str = ""
+    shopify_partner_org_id: str = ""
+    shopify_partner_access_token: str = ""
+    shopify_partner_api_version: str = "2026-07"
     # Relays accepted per minute (spec §3.2), per shopper IP and per shop.
     relay_rate_limit_per_ip: int = 120
     relay_rate_limit_per_shop: int = 6000

@@ -14,12 +14,12 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 
 export default function Plan() {
   const { plansUrl } = useLoaderData<typeof loader>();
-  const app = useRouteLoaderData("routes/app") as { subscribed?: boolean; planName?: string | null } | undefined;
+  const app = useRouteLoaderData("routes/app") as { subscribed?: boolean; planHandle?: string | null } | undefined;
   const subscribed = app?.subscribed ?? false;
 
   return (
     <s-page heading="Plan">
-      <s-section heading={subscribed ? `You're on the ${app?.planName} plan` : "Choose your plan"}>
+      <s-section heading={subscribed ? "Your plan is active" : "Choose your plan"}>
         {subscribed ? (
           <s-paragraph>
             Every Market can have its own Meta pixel, with browser and server events. Shopify bills the plan; manage

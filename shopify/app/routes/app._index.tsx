@@ -134,7 +134,7 @@ function useEmbedActive(): boolean | null {
 
 export default function Markets() {
   const { markets, summary: totals, setup, syncError, loadFailed } = useLoaderData<typeof loader>();
-  const appData = useRouteLoaderData("routes/app") as { apiKey?: string; planName?: string | null } | undefined;
+  const appData = useRouteLoaderData("routes/app") as { apiKey?: string; planHandle?: string | null } | undefined;
   const modalRef = useRef<HTMLElementTagNameMap["s-modal"]>(null);
   // Each opening gets a fresh form, even when the same Market is opened again.
   const [editor, setEditor] = useState({ marketId: null as number | null, opened: 0 });
@@ -158,7 +158,7 @@ export default function Markets() {
       </s-button>
       <s-stack gap="base">
         <s-stack direction="inline" gap="small-200" alignItems="center">
-          <s-badge tone="info">{appData?.planName ? `${appData.planName} plan` : "Plan"}</s-badge>
+          <s-badge tone={appData?.planHandle ? "success" : "info"}>{appData?.planHandle ? "Plan active" : "Plan"}</s-badge>
         </s-stack>
 
         {loadFailed ? (

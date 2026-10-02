@@ -7,6 +7,7 @@ import { NavMenu } from "@shopify/app-bridge-react";
 import { authenticate } from "../shopify.server";
 import { ensureBackendTenant } from "../tenant.server";
 import { checkPlanSubscription } from "../subscription.server";
+import { planHandleHint } from "../subscription.shared.mjs";
 import { resolveSupportConfig } from "../support.server";
 import { ViberFab } from "../components/viber-fab";
 import { withRequestContext } from "../request-context.server";
@@ -21,15 +22,21 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       // Token sync must never block the embedded admin from loading.
     }
     // The one paid plan (spec §5): without an active subscription the admin
-    // shows only the plan page.
-    const subscription = await checkPlanSubscription(admin, session.shop);
-    if (!subscription.active && new URL(request.url).pathname !== "/app/billing") {
+    // shows only the plan page. Shopify's redirect after plan selection carries
+    // ?plan_handle=…, which forces a fresh check.
+    const url = new URL(request.url);
+    const onPlanPage = url.pathname === "/app/billing";
+    const subscription = await checkPlanSubscription(admin, session.shop, {
+      hint: planHandleHint(url),
+      fresh: onPlanPage,
+    });
+    if (!subscription.active && !onPlanPage) {
       throw redirect("/app/billing");
     }
     const support = resolveSupportConfig();
     return {
       apiKey: process.env.SHOPIFY_API_KEY || "",
-      planName: subscription.active ? subscription.planName : null,
+      planHandle: subscription.active ? subscription.planHandle : null,
       subscribed: subscription.active,
       viber: support.viber, // { enabled, numberE164, label }
     };

@@ -65,39 +65,15 @@ def dispatch_shopify_token_refresh() -> dict[str, int]:
         db.close()
 
 
-@celery_app.task(name="app.workers.tasks.dispatch_billing_reconcile")
-def dispatch_billing_reconcile() -> dict[str, int]:
-    """Drift reconcile: re-check every active tenant against the Partner API so plan
-    changes made outside the app are caught. Requires the Partner API to be
-    configured + PartnerBillingClient.fetch_active_subscription implemented."""
-    from sqlalchemy import select
-
-    from app.models import BillingReconcileSource, Tenant, TenantStatus
-    from app.services.billing_reconcile_service import BillingReconcileService
-    from app.services.partner_billing_client import PartnerBillingClient
-
-    logger = get_logger()
-    client = PartnerBillingClient()
-    if not client.configured:
-        logger.info("billing.reconcile_dispatch.skipped", {"reason": "partner_api_unconfigured"})
-        return {"reconciled": 0}
+@celery_app.task(name="app.workers.tasks.dispatch_subscription_check")
+def dispatch_subscription_check() -> dict[str, int]:
+    """Daily: re-read every shop's subscription to the one plan from the Partner
+    API, so a cancellation made outside the app stops its Relays (spec §5)."""
+    from app.services.subscription_service import check_all_subscriptions
 
     db = SessionLocal()
-    reconciled = 0
     try:
-        shops = db.scalars(select(Tenant.shop_domain).where(Tenant.status == TenantStatus.ACTIVE)).all()
-        for shop in shops:
-            try:
-                snapshot = client.fetch_active_subscription(shop)
-                if snapshot is None:
-                    continue
-                BillingReconcileService(db).reconcile(shop, snapshot, BillingReconcileSource.SCHEDULED_WORKER)
-                reconciled += 1
-            except NotImplementedError:
-                break  # template stub — implement the Partner API fetch to enable
-            except Exception as exc:  # noqa: BLE001 — one shop must not stop the sweep
-                logger.warn("billing.reconcile_dispatch.shop_failed", {"shop": shop, "detail": str(exc)})
-        return {"reconciled": reconciled}
+        return check_all_subscriptions(db)
     finally:
         db.close()
 

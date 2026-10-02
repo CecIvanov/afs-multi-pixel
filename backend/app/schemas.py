@@ -213,3 +213,5 @@ class EventLogOut(BaseModel):
 
 class SubscriptionIn(BaseModel):
     active: bool
+    # gid://shopify/Shop/<id>, kept so the daily check can ask the Partner API.
+    shop_gid: str | None = None

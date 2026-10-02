@@ -30,9 +30,6 @@ api_version = "2026-10"
   topics = ["app/scopes_update"]
   uri = "/webhooks/app/scopes_update"
 
-  [[webhooks.subscriptions]]
-  topics = ["app_subscriptions/update"]
-  uri = "/webhooks/app/subscriptions/update"
 
   # Mandatory GDPR compliance topics for public apps.
   [[webhooks.subscriptions]]

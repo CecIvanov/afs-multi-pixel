@@ -1,13 +1,12 @@
-"""Shopify Partner API `activeSubscription` snapshot.
+"""Shopify Partner API `activeSubscription` snapshot (Shopify App Pricing).
 
-Under managed pricing this — not the app_subscriptions/update webhook — is the
-source of truth. The Node side fetches it on app load and passes it to the backend
-reconcile endpoint; the scheduled worker fetches it here for drift reconciliation.
+Under managed pricing this is the source of truth: Shopify stopped sending
+subscription webhooks for managed pricing after April 28, 2026. The Node side
+reads it on app load (with the plan_handle redirect hint); the daily worker reads
+it here so a cancellation made outside the app stops Relays.
 
-The fetch requires SHOPIFY_APP_GID + SHOPIFY_PARTNER_ORG_ID +
-SHOPIFY_PARTNER_ACCESS_TOKEN and Partner API version 2026-07+; it is a thin,
-network-only adapter (can't be unit-tested) — the reconcile STATE MACHINE takes a
-snapshot, so its logic is fully testable without a network.
+Needs SHOPIFY_APP_GID + SHOPIFY_PARTNER_ORG_ID (in .env.<stack>) and
+SHOPIFY_PARTNER_ACCESS_TOKEN (in .credentials.<stack>); Partner API 2026-07+.
 """
 
 from __future__ import annotations
@@ -15,6 +14,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
+
+import httpx
 
 
 @dataclass(frozen=True)
@@ -41,26 +42,88 @@ class PartnerSubscriptionSnapshot:
         }
 
 
+ACTIVE_SUBSCRIPTION_QUERY = """
+query ActiveSubscription($appId: ID!, $shopId: ID!) {
+  activeSubscription(appId: $appId, shopId: $shopId) {
+    billingPeriod
+    cancelAtEndOfCycle
+    trialEndsAt
+    currentBillingCycle { startTime endTime }
+    items { handle }
+    pendingUpdate { billingPeriod items { handle } }
+  }
+}
+"""
+
+# Replaced in tests with an httpx.MockTransport.
+_transport: httpx.BaseTransport | None = None
+
+
+def _datetime(value: Any) -> datetime | None:
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00")) if value else None
+    except ValueError:
+        return None
+
+
+def _first_handle(items: Any) -> str | None:
+    for item in items or []:
+        handle = str((item or {}).get("handle") or "").strip().lower()
+        if handle:
+            return handle
+    return None
+
+
+def parse_active_subscription(data: dict[str, Any]) -> PartnerSubscriptionSnapshot:
+    """The ``data`` of the activeSubscription query as a snapshot; null means the
+    shop has no subscription to the app."""
+    sub = data.get("activeSubscription")
+    if not sub:
+        return PartnerSubscriptionSnapshot(has_active_contract=False, raw=data)
+    period = str(sub.get("billingPeriod") or "").upper()
+    cycle = sub.get("currentBillingCycle") or {}
+    return PartnerSubscriptionSnapshot(
+        has_active_contract=True,
+        effective_plan_handle=_first_handle(sub.get("items")),
+        pending_plan_handle=_first_handle((sub.get("pendingUpdate") or {}).get("items")),
+        billing_period="yearly" if period in ("ANNUAL", "YEARLY") else "monthly" if period else None,
+        cancel_at_end_of_cycle=sub.get("cancelAtEndOfCycle") is True,
+        cycle_start=_datetime(cycle.get("startTime")),
+        cycle_end=_datetime(cycle.get("endTime")),
+        trial_ends_at=_datetime(sub.get("trialEndsAt")),
+        raw=data,
+    )
+
+
 class PartnerBillingClient:
-    """Thin Partner API client for the scheduled reconcile worker. Returns None
-    when unconfigured so the worker degrades gracefully."""
+    """Partner API client for the daily subscription check."""
 
     def __init__(self) -> None:
         from app.config import get_settings
 
         s = get_settings()
-        self.app_gid = getattr(s, "shopify_app_gid", None)
-        self.org_id = getattr(s, "shopify_partner_org_id", None)
-        self.access_token = getattr(s, "shopify_partner_access_token", None)
+        self.app_gid = s.shopify_app_gid
+        self.org_id = s.shopify_partner_org_id
+        self.access_token = s.shopify_partner_access_token
+        self.api_version = s.shopify_partner_api_version
 
     @property
     def configured(self) -> bool:
         return bool(self.app_gid and self.org_id and self.access_token)
 
-    def fetch_active_subscription(self, shop_domain: str) -> PartnerSubscriptionSnapshot | None:
+    def fetch_active_subscription(self, shop_gid: str) -> PartnerSubscriptionSnapshot:
+        """``shop_gid`` is ``gid://shopify/Shop/<id>``. Raises on any API error."""
         if not self.configured:
-            return None
-        # Implement the Partner API `app { events / subscriptions }` query here for
-        # the scheduled worker. Left unimplemented in the template — the app-load
-        # path (Node -> /internal/billing/reconcile) covers normal reconciliation.
-        raise NotImplementedError("Partner API fetch not implemented in the template")
+            raise RuntimeError("The Partner API isn't configured")
+        url = f"https://partners.shopify.com/{self.org_id}/api/{self.api_version}/graphql.json"
+        with httpx.Client(transport=_transport, timeout=20.0) as client:
+            response = client.post(
+                url,
+                json={"query": ACTIVE_SUBSCRIPTION_QUERY, "variables": {"appId": self.app_gid, "shopId": shop_gid}},
+                headers={"X-Shopify-Access-Token": str(self.access_token), "Content-Type": "application/json"},
+            )
+        response.raise_for_status()
+        payload = response.json()
+        if payload.get("errors"):
+            raise RuntimeError("; ".join(str(e.get("message") or e) for e in payload["errors"]))
+        return parse_active_subscription(payload.get("data") or {})

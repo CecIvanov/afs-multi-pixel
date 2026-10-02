@@ -1,10 +1,25 @@
-// The one paid plan (spec §1, §5): the app knows only its exact name and checks
-// that the shop's subscription to it is active. Pure, so node --test covers it.
+// The one paid plan (spec §1, §5), billed by Shopify App Pricing. The app knows
+// only the plan's exact handle and reads the shop's subscription from the Partner
+// API. Pure, so node --test covers it.
 
 /**
- * @param {Array<{ name: string, status: string }> | null | undefined} subscriptions
- * @param {string} planName
+ * @param {{ has_active_contract: boolean, effective_plan_handle: string | null } | null | undefined} snapshot
+ * @param {string} planHandle
  */
-export function hasActivePlan(subscriptions, planName) {
-  return (subscriptions ?? []).some((s) => s.name === planName && String(s.status).toUpperCase() === "ACTIVE");
+export function isSubscribed(snapshot, planHandle) {
+  return Boolean(
+    snapshot?.has_active_contract &&
+      String(snapshot.effective_plan_handle ?? "").toLowerCase() === planHandle.toLowerCase(),
+  );
+}
+
+/** Shopify redirects back with ?plan_handle=… once the merchant picks a plan. */
+export function planHandleHint(url) {
+  return url.searchParams.get("plan_handle")?.trim().toLowerCase() || null;
+}
+
+/** The Partner API is slow and rate-limited: reuse a recent answer, except right
+ * after a billing redirect or on the Plan page. */
+export function shouldReuseCheck({ cachedAt, now, ttlMs, forceFresh }) {
+  return !forceFresh && cachedAt != null && now - cachedAt < ttlMs;
 }

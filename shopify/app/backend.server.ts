@@ -288,9 +288,9 @@ export async function updateSetup(shopDomain: string, changes: Partial<SetupReco
   });
 }
 
-export async function reportSubscription(shopDomain: string, active: boolean) {
+export async function reportSubscription(shopDomain: string, active: boolean, shopGid: string) {
   return backendFetch<SetupRecord>(
     `/api/v1/internal/tenants/by-shop/${encodeURIComponent(shopDomain)}/subscription`,
-    { method: "POST", shopDomain, body: JSON.stringify({ active }) },
+    { method: "POST", shopDomain, body: JSON.stringify({ active, shop_gid: shopGid }) },
   );
 }

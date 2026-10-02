@@ -341,9 +341,12 @@ def remove_market_pixel(
 @router.post("/tenants/by-shop/{shop_domain}/subscription", response_model=SetupOut)
 def report_subscription(shop_domain: str, payload: SubscriptionIn, db: Session = Depends(get_db)) -> SetupOut:
     """The BFF reports whether the shop's subscription to the one plan is active
-    (read on app open); without it Relays stop (spec §5)."""
+    (read from the Partner API on app open); without it Relays stop (spec §5)."""
+    from app.services.relay_service import numeric_id
     from app.services.subscription_service import set_subscription_active
 
     tenant = _tenant_or_404(db, shop_domain)
+    if payload.shop_gid and (shop_id := numeric_id(payload.shop_gid)) is not None:
+        tenant.shopify_shop_id = shop_id
     set_subscription_active(db, tenant, payload.active)
     return _setup_out(tenant)
