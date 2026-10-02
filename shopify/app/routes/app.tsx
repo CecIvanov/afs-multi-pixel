@@ -8,6 +8,7 @@ import { authenticate } from "../shopify.server";
 import { ensureBackendTenant } from "../tenant.server";
 import { checkPlanSubscription } from "../subscription.server";
 import { planHandleHint } from "../subscription.shared.mjs";
+import { billingMode } from "../billing.server";
 import { resolveSupportConfig } from "../support.server";
 import { ViberFab } from "../components/viber-fab";
 import { withRequestContext } from "../request-context.server";
@@ -25,7 +26,10 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     // shows only the plan page. Shopify's redirect after plan selection carries
     // ?plan_handle=…, which forces a fresh check.
     const url = new URL(request.url);
+    const billingEnabled = billingMode() !== "disabled";
     const onPlanPage = url.pathname === "/app/billing";
+    // A custom app (UAT) has no billing: there's no Plan page to show.
+    if (!billingEnabled && onPlanPage) throw redirect("/app");
     const subscription = await checkPlanSubscription(admin, session.shop, {
       hint: planHandleHint(url),
       fresh: onPlanPage,
@@ -36,7 +40,8 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     const support = resolveSupportConfig();
     return {
       apiKey: process.env.SHOPIFY_API_KEY || "",
-      planHandle: subscription.active ? subscription.planHandle : null,
+      planHandle: billingEnabled && subscription.active ? subscription.planHandle : null,
+      billingEnabled,
       subscribed: subscription.active,
       viber: support.viber, // { enabled, numberE164, label }
     };
@@ -44,12 +49,12 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 };
 
 export default function App() {
-  const { apiKey, viber } = useLoaderData<typeof loader>();
+  const { apiKey, viber, billingEnabled } = useLoaderData<typeof loader>();
   return (
     <AppProvider apiKey={apiKey}>
       <NavMenu>
         <Link to="/app" rel="home">Markets</Link>
-        <Link to="/app/billing">Plan</Link>
+        {billingEnabled ? <Link to="/app/billing">Plan</Link> : null}
         <Link to="/app/settings">Settings</Link>
         <Link to="/app/help">Help</Link>
       </NavMenu>

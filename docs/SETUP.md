@@ -64,8 +64,8 @@ embedded app; point your Partner app's App URL at it (behind a tunnel/HTTPS).
 (see the Environments table in the README). For each: create its Partner app, set
 its non-secret values in the committed `.env.<env>`, create `.credentials.<env>` on
 the VPS from `.credentials.example` (never committed), `npm run config:link:<env>`,
-then `./scripts/start.sh <env>` and `npm run deploy:<env>`. UAT ships with `BILLING_ENFORCEMENT_ENABLED=false` so
-every plan gate is open for testing.
+then `./scripts/start.sh <env>` and `npm run deploy:<env>`. The UAT App is a custom app with no billing (`SHOPIFY_BILLING_MODE=disabled`):
+every shop counts as subscribed and the admin has no Plan page.
 
 ## 6. Verify the install round-trip
 
