@@ -12,13 +12,13 @@ init: ## Instantiate the template (name the app, create env files)
 	node scripts/init-template.mjs
 
 dev: ## Bring up the DEV stack
-	./scripts/start.sh dev
+	./scripts/start-dev.sh
 
 uat: ## Bring up the UAT stack (separate Shopify app + db + backend)
-	./scripts/start.sh uat
+	./scripts/start-uat.sh
 
 production: ## Bring up the PRODUCTION stack (separate Shopify app + db + backend)
-	./scripts/start.sh production
+	./scripts/start-production.sh
 
 stop: ## Stop a stack (make stop ENV=uat)
 	./scripts/stop.sh $(ENV)

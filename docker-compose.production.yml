@@ -1,5 +1,5 @@
 # PRODUCTION overlay — a SEPARATE stack from dev and uat. Used by
-# ./scripts/start.sh production with .env.production (committed) +
+# ./scripts/start-production.sh with .env.production (committed) +
 # .credentials.production (on the VPS only).
 #
 # For a real deployment you will typically:

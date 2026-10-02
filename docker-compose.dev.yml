@@ -1,4 +1,4 @@
-# Development overlay — used by `./scripts/start.sh dev` with .env.dev.
+# Development overlay — used by `./scripts/start-dev.sh` with .env.dev.
 # Dev is self-contained: it runs its own Postgres container (UAT and production
 # use the VPS's Postgres instead; see docker-compose.yml). The api waits for it.
 

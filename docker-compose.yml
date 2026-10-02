@@ -2,7 +2,7 @@
 #
 # Identity is interpolated from environment exported by scripts/lib/config.sh out
 # of app.config.json (APP_IMAGE_PREFIX, DB_NAME, DB_USER, APP_CELERY_KEY_PREFIX)
-# plus .env.<stack> / .credentials.<stack>. Bring it up with ./scripts/start.sh.
+# plus .env.<stack> / .credentials.<stack>. Bring it up with ./scripts/start-<stack>.sh.
 #
 # Postgres is NOT in the base stack. UAT and production use the VPS's own Postgres:
 # containers reach it at host.docker.internal (mapped to the host by extra_hosts),

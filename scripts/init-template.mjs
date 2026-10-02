@@ -140,7 +140,7 @@ async function main() {
   console.log("Next steps (repeat per environment — dev, uat, production):");
   console.log("  1. Create a Shopify Partner app for each env; put its client id/secret in .credentials.<env>");
   console.log("  2. cd shopify && npm install && npm run config:link[:uat|:production]");
-  console.log("  3. ./scripts/start.sh dev     (or uat / production — separate stacks)");
+  console.log("  3. ./scripts/start-dev.sh     (or start-uat.sh / start-production.sh — separate stacks)");
   console.log("  4. See docs/SETUP.md for the full walk-through.\n");
 }
 

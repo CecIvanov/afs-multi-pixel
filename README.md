@@ -175,7 +175,7 @@ $EDITOR .credentials.dev        # set DATABASE_PASSWORD, Shopify keys, INTERNAL_
 
 # 3. Bring the DEV stack up (Postgres, Redis, API, worker, beat, jobs, UI).
 #    The API applies migrations on boot; Postgres/Redis run as containers.
-./scripts/start.sh dev          # or: make dev  ·  uat: ./scripts/start.sh uat
+./scripts/start-dev.sh         # or: make dev  ·  uat: ./scripts/start-uat.sh
 
 #    Then:
 #      UI      http://127.0.0.1:3000
@@ -219,7 +219,7 @@ environment**:
 # 2. Link the env's toml:
 cd shopify && npm run config:link:uat     # or config:link (dev) / config:link:production
 # 3. Bring the env's stack up (separate db + backend):
-./scripts/start.sh uat                    # dev · uat · production
+./scripts/start-uat.sh                    # start-dev.sh · start-uat.sh · start-production.sh
 # 4. Deploy the env's extensions/config:
 npm run deploy:uat                        # deploy (dev) · deploy:uat · deploy:production
 ```
@@ -298,7 +298,7 @@ ShopifyAppTemplate/
 │  ├─ logger/ (TS) · app_logger/ (Py)   # byte-identical JSON shape
 │  └─ app_metrics/ (Py)                 # Prometheus, HTTP + worker
 ├─ docker-compose.yml (+ .dev / .prod)  # api · worker · beat · ui · pg · redis  [present]
-├─ scripts/  start.sh · stop.sh · logs.sh [env] · init-template.mjs · lib/{compose,config,credentials}.sh  [present]
+├─ scripts/  start-{dev,uat,production}.sh · stop.sh · logs.sh [env] · init-template.mjs · lib/{compose,config,credentials}.sh  [present]
 ├─ docs/  SETUP.md · SEAMS.md                                      [next phase]
 └─ README.md                  # this file                          [present]
 ```
@@ -378,7 +378,7 @@ domain routes on top without re-earning the baseline.
 | Phase | Deliverable |
 | --- | --- |
 | **0a — identity + DB + docs** | Single config source, database setup scripts, this README. **done** |
-| **0b — skeleton + bring-up** | Docker compose (ui/api/worker/beat/pg/redis), Dockerfiles + migrate-on-startup entrypoint, shared logger/metrics packages, FastAPI app-factory + health, Celery worker/beat, `start.sh <env>`. **done** |
+| **0b — skeleton + bring-up** | Docker compose (ui/api/worker/beat/pg/redis), Dockerfiles + migrate-on-startup entrypoint, shared logger/metrics packages, FastAPI app-factory + health, Celery worker/beat, `start-<env>.sh`. **done** |
 | **1 — auth + tenant** | React Router embedded app (`shopify.server.ts`, Polaris/App-Bridge shell, `afterAuth` → tenant upsert), `Tenant` + `TenantMetadata` + plan tables, Alembic baseline, install/uninstall/session-sync internal API, GDPR + lifecycle webhooks, async shop-info capture. Backend verified against Postgres (9 pytest); UI typechecks + builds. **← you are here** |
 | **2 — webhooks + async** | `WebhookEvent` (delivery dedup) + durable `AsyncJob` queue (SKIP-LOCKED claim, in-flight caps, backoff, dead-letter, stale-reaper), ingest service + operation→handler registry, `job_pool` worker, GDPR redaction. Verified against Postgres (20 pytest) + 6 Node tests. **← you are here** |
 | **3 — billing** | Config-driven plan catalog + pure semantics (both languages), managed-pricing helpers, Partner-API reconcile state machine (trial-downgrade fix), rank-based feature gates, metered usage with atomic guard, enforcement kill-switch. Verified (30 pytest + 9 node). **← you are here** |

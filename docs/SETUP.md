@@ -53,7 +53,7 @@ npm run dev              # opens a tunnel, sets URLs, installs on a dev store
 
 **Option B — the full Docker stack (UI + API + worker + beat + jobs + Postgres + Redis):**
 ```bash
-./scripts/start.sh dev          # dev · uat · production are separate stacks
+./scripts/start-dev.sh         # start-uat.sh · start-production.sh: separate stacks
 ```
 The API applies migrations on boot and seeds the plan catalog. The UI serves the
 embedded app; point your Partner app's App URL at it (behind a tunnel/HTTPS).
@@ -64,7 +64,7 @@ embedded app; point your Partner app's App URL at it (behind a tunnel/HTTPS).
 (see the Environments table in the README). For each: create its Partner app, set
 its non-secret values in the committed `.env.<env>`, create `.credentials.<env>` on
 the VPS from `.credentials.example` (never committed), `npm run config:link:<env>`,
-then `./scripts/start.sh <env>` and `npm run deploy:<env>`. The UAT App is a custom app with no billing (`SHOPIFY_BILLING_MODE=disabled`):
+then `./scripts/start-<env>.sh` and `npm run deploy:<env>`. The UAT App is a custom app with no billing (`SHOPIFY_BILLING_MODE=disabled`):
 every shop counts as subscribed and the admin has no Plan page.
 
 ## 7a. Deploy UAT / production on the VPS
@@ -78,7 +78,7 @@ which docker-compose maps to the host's Docker bridge. On the VPS, once per stac
 cp .credentials.example .credentials.uat && chmod 600 .credentials.uat   # fill the secrets
 ./scripts/db/setup.sh uat --provision-only     # role + database in the host Postgres (sudo)
 ./scripts/db/allow-docker-access.sh uat        # pg_hba line for the containers; checks listen_addresses
-./scripts/start.sh uat                         # api migrates and seeds plans on start
+./scripts/start-uat.sh                         # api migrates and seeds plans on start
 ```
 
 Same with `production` (database and role `afsmultipixel`; UAT's are
