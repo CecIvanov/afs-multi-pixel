@@ -42,6 +42,8 @@ class BillingReconcileIn(BaseModel):
     shop_domain: str
     source: str = "app_load"
     partner_snapshot: PartnerSnapshotIn
+    # gid://shopify/Shop/<id>, kept so the daily check can ask the Partner API.
+    shop_gid: str | None = None
 
 
 class BillingReconcileOut(BaseModel):
@@ -49,12 +51,18 @@ class BillingReconcileOut(BaseModel):
     action: str
     effective_plan_handle: str
     pending_plan_handle: str | None = None
+    # Any plan above the catalog's "none" gives access.
+    subscribed: bool = False
 
 
 class BillingOut(BaseModel):
     plan_handle: str
     plan_name: str
     pending_plan_handle: str | None = None
+    pending_plan_name: str | None = None
+    # When the pending (lower) plan takes over: the end of the current cycle.
+    current_period_end: datetime | None = None
+    subscribed: bool = False
     status: str
     used: int = 0
     quota: int | None = None
@@ -209,9 +217,3 @@ class EventLogRowOut(BaseModel):
 
 class EventLogOut(BaseModel):
     events: list[EventLogRowOut]
-
-
-class SubscriptionIn(BaseModel):
-    active: bool
-    # gid://shopify/Shop/<id>, kept so the daily check can ask the Partner API.
-    shop_gid: str | None = None

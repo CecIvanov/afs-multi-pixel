@@ -41,29 +41,35 @@
     }
   },
   "billing": {
-    "_comment": "AFS Multi Pixel has ONE paid plan, no trial, in Shopify App Pricing (managed pricing). The app knows only its exact handle (BILLING_PLAN_HANDLE in .env.<stack>, 'light') and reads each shop's subscription from the Partner API activeSubscription; never an amount. 'plans' below feed the template's dormant tiered engine (backend/app/billing) and are not used for gating.",
+    "_comment": "Shopify App Pricing (managed pricing, spec §5). 'plans' mirrors the plans in the Partner Dashboard by their exact handle, ordered by 'rank': a move to a higher rank is an upgrade (effective at once), to a lower rank a downgrade (pending until the cycle ends, as Shopify does it). 'none' is not a Shopify plan: it's the state before a plan is chosen or after cancelling, and gives no access; every other plan gives full access (no feature gating). The app never holds amounts. Add a future plan here with its handle and a rank.",
     "mode": "managed",
     "trialDays": 0,
-    "freePlanHandle": "free",
-    "topPlanHandle": "pro",
+    "freePlanHandle": "none",
+    "topPlanHandle": "light",
     "plans": [
       {
-        "handle": "free",
-        "name": "Free",
+        "handle": "none",
+        "name": "No plan",
         "rank": 0,
         "shopifyPlanName": null,
-        "monthlyQuota": 50,
+        "monthlyQuota": null,
         "features": []
       },
       {
-        "handle": "pro",
-        "name": "Pro",
+        "handle": "shopify-test",
+        "name": "Shopify test",
         "rank": 10,
-        "shopifyPlanName": "Pro",
+        "shopifyPlanName": "shopify-test",
         "monthlyQuota": null,
-        "features": [
-          "example_premium_feature"
-        ]
+        "features": []
+      },
+      {
+        "handle": "light",
+        "name": "Light",
+        "rank": 20,
+        "shopifyPlanName": "light",
+        "monthlyQuota": null,
+        "features": []
       }
     ]
   },

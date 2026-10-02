@@ -27,7 +27,20 @@ def _require_test_db():
     if not url or not _is_test_db(url):
         pytest.skip("TEST_DATABASE_URL must point at a *_test database")
     _ensure_prisma_session_table()
+    _sync_plan_catalog()
     yield
+
+
+def _sync_plan_catalog() -> None:
+    """Runtime seeds billing_plans from app.config.json on API start; mirror it."""
+    from app.db.session import SessionLocal
+    from app.services.plan_catalog_sync import sync_plan_catalog
+
+    session = SessionLocal()
+    try:
+        sync_plan_catalog(session)
+    finally:
+        session.close()
 
 
 def _ensure_prisma_session_table() -> None:

@@ -1,15 +1,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { isSubscribed, planHandleHint, shouldReuseCheck } from "./subscription.shared.mjs";
+import { honoursRedirectHint, planHandleHint, shouldReuseCheck } from "./subscription.shared.mjs";
 
-const snapshot = (over = {}) => ({ has_active_contract: true, effective_plan_handle: "light", ...over });
-
-test("only an active contract on the exact plan handle counts", () => {
-  assert.equal(isSubscribed(snapshot(), "light"), true);
-  assert.equal(isSubscribed(snapshot({ effective_plan_handle: "LIGHT" }), "light"), true);
-  assert.equal(isSubscribed(snapshot({ effective_plan_handle: "pro" }), "light"), false);
-  assert.equal(isSubscribed(snapshot({ has_active_contract: false }), "light"), false);
-  assert.equal(isSubscribed(null, "light"), false);
+test("the redirect after choosing a plan lets the merchant in while the Partner API catches up", () => {
+  assert.equal(honoursRedirectHint(true, null), true);
+  assert.equal(honoursRedirectHint(false, null), false);
+  assert.equal(honoursRedirectHint(false, "shopify-test"), true);
+  assert.equal(honoursRedirectHint(false, "none"), false);
 });
 
 test("planHandleHint reads Shopify's redirect after the merchant picks a plan", () => {

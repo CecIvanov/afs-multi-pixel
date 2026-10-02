@@ -205,7 +205,7 @@ side-by-side on one host.
 | Database | `<slug>_dev` | `<slug>_uat` | `<slug>` (bare) |
 | Containers | `<slug>-*-dev` | `<slug>-*-uat` | `<slug>-*-production` |
 | Ports (UI/API) | 3000 / 8000 | 3010 / 8010 | 3020 / 8020 |
-| Billing | per `.env.dev` | **none**: custom app, `SHOPIFY_BILLING_MODE=disabled` | Shopify App Pricing, plan handle `light` |
+| Billing | per `.env.dev` | **none**: custom app, `SHOPIFY_BILLING_MODE=disabled` | Shopify App Pricing: `shopify-test` < `light` (app.config.json) |
 | Settings (non-secret) | `.env.dev` (local) | `.env.uat` (**committed**) | `.env.production` (**committed**) |
 | Secrets | `.credentials.dev` (local) | `.credentials.uat` (VPS only) | `.credentials.production` (VPS only) |
 

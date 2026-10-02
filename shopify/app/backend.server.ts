@@ -137,6 +137,9 @@ export type BillingRecord = {
   plan_handle: string;
   plan_name: string;
   pending_plan_handle: string | null;
+  pending_plan_name: string | null;
+  current_period_end: string | null;
+  subscribed: boolean;
   status: string;
   used: number;
   quota: number | null;
@@ -154,12 +157,14 @@ export async function reconcileBilling(payload: {
   shop_domain: string;
   source: string;
   partner_snapshot: Record<string, unknown>;
+  shop_gid?: string;
 }) {
   return backendFetch<{
     status: string;
     action: string;
     effective_plan_handle: string;
     pending_plan_handle: string | null;
+    subscribed: boolean;
   }>("/api/v1/internal/billing/reconcile", {
     method: "POST",
     shopDomain: payload.shop_domain,
@@ -286,11 +291,4 @@ export async function updateSetup(shopDomain: string, changes: Partial<SetupReco
     shopDomain,
     body: JSON.stringify(changes),
   });
-}
-
-export async function reportSubscription(shopDomain: string, active: boolean, shopGid: string) {
-  return backendFetch<SetupRecord>(
-    `/api/v1/internal/tenants/by-shop/${encodeURIComponent(shopDomain)}/subscription`,
-    { method: "POST", shopDomain, body: JSON.stringify({ active, shop_gid: shopGid }) },
-  );
 }

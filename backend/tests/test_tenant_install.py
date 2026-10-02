@@ -20,7 +20,7 @@ def test_install_creates_tenant_with_plan(client):
     body = r.json()
     assert body["shop_domain"] == "demo-shop.myshopify.com"
     assert body["status"] == "active"
-    assert body["plan_handle"] == "free"  # seeded by migration 002
+    assert body["plan_handle"] == "none"  # no plan chosen yet (app.config.json billing)
     assert body["installed_at"] is not None
 
 

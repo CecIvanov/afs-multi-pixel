@@ -1,19 +1,17 @@
-"""The one paid plan (spec §1, §5): Shopify App Pricing (managed pricing). The app
-knows only the plan's exact handle ("light") and reads the shop's subscription
-from the Partner API ``activeSubscription``; without it, Relays stop."""
+"""Plan access (spec §1, §5): the Partner API activeSubscription is read on app open
+(the BFF posts it to /billing/reconcile) and daily for every shop; any plan above
+"none" gives access, and without one Relays stop."""
 
 from __future__ import annotations
+
+import json
 
 import httpx
 import pytest
 
 from app.services.partner_billing_client import PartnerBillingClient, parse_active_subscription
-from app.services.subscription_service import (
-    check_all_subscriptions,
-    is_subscribed,
-    plan_handle,
-    set_subscription_active,
-)
+from app.services.subscription_service import check_all_subscriptions
+from tests.conftest import INTERNAL_HEADERS
 from tests.test_markets import SHOP, _tenant
 from tests.test_relay import _receive, _shop
 
@@ -24,30 +22,27 @@ ACTIVE = {
         "trialEndsAt": None,
         "currentBillingCycle": {"startTime": "2026-10-01T00:00:00Z", "endTime": "2026-10-31T00:00:00Z"},
         "items": [{"handle": "light"}],
-        "pendingUpdate": None,
+        "pendingUpdate": {"billingPeriod": "MONTHLY", "items": [{"handle": "shopify-test"}]},
     }
 }
 
 
-# --- reading the Partner API answer ------------------------------------------------------
+def _snapshot_json(**over):
+    snap = {"has_active_contract": True, "effective_plan_handle": "light", "pending_plan_handle": None,
+            "cycle_start": "2026-10-01T00:00:00Z", "cycle_end": "2026-10-31T00:00:00Z"}
+    snap.update(over)
+    return snap
+
+
+# --- the Partner API -------------------------------------------------------------------
 @pytest.mark.unit
-def test_an_active_subscription_to_the_plan_handle_counts():
-    assert plan_handle() == "light"
-    assert is_subscribed(parse_active_subscription(ACTIVE)) is True
+def test_the_answer_carries_the_effective_and_pending_plan():
+    snapshot = parse_active_subscription(ACTIVE)
 
-
-@pytest.mark.unit
-def test_no_contract_or_another_plan_doesnt_count():
-    assert is_subscribed(parse_active_subscription({"activeSubscription": None})) is False
-    other = {"activeSubscription": {**ACTIVE["activeSubscription"], "items": [{"handle": "pro"}]}}
-    assert is_subscribed(parse_active_subscription(other)) is False
-
-
-@pytest.mark.unit
-def test_a_cancellation_at_the_end_of_the_cycle_still_counts_until_then():
-    cancelling = {"activeSubscription": {**ACTIVE["activeSubscription"], "cancelAtEndOfCycle": True}}
-    snapshot = parse_active_subscription(cancelling)
-    assert snapshot.cancel_at_end_of_cycle is True and is_subscribed(snapshot) is True
+    assert (snapshot.has_active_contract, snapshot.effective_plan_handle, snapshot.pending_plan_handle) == (
+        True, "light", "shopify-test"
+    )
+    assert parse_active_subscription({"activeSubscription": None}).has_active_contract is False
 
 
 @pytest.mark.unit
@@ -75,50 +70,73 @@ def test_the_client_sends_the_documented_partner_api_query(monkeypatch):
     (request,) = seen
     assert str(request.url) == "https://partners.shopify.com/123/api/2026-07/graphql.json"
     assert request.headers["X-Shopify-Access-Token"] == "prtapi_x"
-    body = __import__("json").loads(request.content)
+    body = json.loads(request.content)
     assert "activeSubscription(appId: $appId, shopId: $shopId)" in body["query"]
     assert body["variables"] == {"appId": "gid://shopify/App/1", "shopId": "gid://shopify/Shop/77"}
 
 
-# --- what it gates ------------------------------------------------------------------------
+# --- app open: the BFF posts the snapshot ------------------------------------------------
 @pytest.mark.integration
-def test_relays_stop_for_a_shop_without_the_subscription(db):
-    tenant = _shop(db)
+def test_app_open_reconciles_and_keeps_the_shop_id(db, client):
+    tenant = _tenant(db)
 
-    set_subscription_active(db, tenant, False)
+    response = client.post(
+        "/api/v1/internal/billing/reconcile",
+        json={"shop_domain": SHOP, "partner_snapshot": _snapshot_json(effective_plan_handle="shopify-test"),
+              "shop_gid": "gid://shopify/Shop/77"},
+        headers=INTERNAL_HEADERS,
+    )
+
+    assert response.json()["subscribed"] is True
+    assert response.json()["effective_plan_handle"] == "shopify-test"
+    db.refresh(tenant)
+    assert (tenant.subscription_active, tenant.shopify_shop_id) == (True, 77)
+
+
+@pytest.mark.integration
+def test_no_subscription_means_no_access(db, client):
+    _tenant(db)
+
+    response = client.post(
+        "/api/v1/internal/billing/reconcile",
+        json={"shop_domain": SHOP, "partner_snapshot": {"has_active_contract": False}},
+        headers=INTERNAL_HEADERS,
+    )
+
+    assert response.json()["subscribed"] is False and response.json()["effective_plan_handle"] == "none"
+
+
+# --- what it gates -----------------------------------------------------------------------
+@pytest.mark.integration
+def test_relays_stop_for_a_shop_without_a_plan(db):
+    from app.models import BillingReconcileSource
+    from app.services.billing_reconcile_service import BillingReconcileService
+
+    _shop(db)
+    BillingReconcileService(db).reconcile(SHOP, parse_active_subscription(ACTIVE), BillingReconcileSource.APP_LOAD)
+    BillingReconcileService(db).reconcile(
+        SHOP, parse_active_subscription({"activeSubscription": None}), BillingReconcileSource.APP_LOAD
+    )
 
     assert _receive(db) == "rejected"
 
 
 @pytest.mark.integration
 def test_a_shop_never_checked_yet_still_sends(db):
-    _shop(db)  # subscription_active is unknown (NULL) until the first check
+    _shop(db)  # subscription_active is unknown (NULL) until the first reconcile
 
     assert _receive(db) == "stored"
 
 
 @pytest.mark.integration
-def test_the_bff_reports_the_subscription_and_the_shop_id(db, client):
-    from tests.conftest import INTERNAL_HEADERS
-
-    tenant = _tenant(db)
-
-    response = client.post(
-        f"/api/v1/internal/tenants/by-shop/{SHOP}/subscription",
-        json={"active": True, "shop_gid": "gid://shopify/Shop/77"},
-        headers=INTERNAL_HEADERS,
-    )
-
-    assert response.status_code == 200
-    db.refresh(tenant)
-    assert (tenant.subscription_active, tenant.shopify_shop_id) == (True, 77)
-
-
-@pytest.mark.integration
 def test_the_daily_check_catches_a_cancellation_made_outside_the_app(db):
+    from app.models import BillingReconcileSource
+    from app.services.billing_reconcile_service import BillingReconcileService
+
     tenant = _tenant(db)
     tenant.shopify_shop_id = 77
-    set_subscription_active(db, tenant, True)
+    db.commit()
+    BillingReconcileService(db).reconcile(SHOP, parse_active_subscription(ACTIVE), BillingReconcileSource.APP_LOAD)
 
     class CancelledEverywhere:
         configured = True

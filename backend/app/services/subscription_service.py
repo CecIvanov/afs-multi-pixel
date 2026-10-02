@@ -1,9 +1,8 @@
-"""The one paid plan (spec §1, §5), billed by Shopify App Pricing. The app knows
-only the plan's exact handle (BILLING_PLAN_HANDLE, "light") and whether the shop's
-Partner API ``activeSubscription`` is to that plan; never an amount. A shop known
-to have no active subscription gets no Relays accepted; NULL means "not checked
-yet" and passes. The BFF checks on app open; ``check_all_subscriptions`` runs daily
-so a cancellation made outside the app is caught.
+"""The daily plan check (spec §5): re-read every installed shop's Partner API
+``activeSubscription`` and reconcile it, so plan changes made outside the app — a
+cancellation, a downgrade reaching the end of its cycle — take effect even if the
+merchant never opens the app. Shops whose Shopify ID isn't known yet (never
+opened the app) are skipped; a failed read leaves the shop as it was.
 """
 
 from __future__ import annotations
@@ -13,29 +12,11 @@ from typing import Protocol
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.config import get_settings
 from app.logging_config import get_logger
-from app.models import Tenant, TenantStatus
+from app.models import BillingReconcileSource, Tenant, TenantStatus
 from app.services.partner_billing_client import PartnerSubscriptionSnapshot
 
 logger = get_logger().child({"component": "subscription"})
-
-
-def plan_handle() -> str:
-    return get_settings().billing_plan_handle.strip().lower()
-
-
-def is_subscribed(snapshot: PartnerSubscriptionSnapshot) -> bool:
-    """An active contract on the plan handle. A cancellation scheduled for the end
-    of the cycle still counts until Shopify ends the contract."""
-    return snapshot.has_active_contract and snapshot.effective_plan_handle == plan_handle()
-
-
-def set_subscription_active(db: Session, tenant: Tenant, active: bool) -> None:
-    if tenant.subscription_active != active:
-        logger.info("subscription.changed", {"tenantId": str(tenant.id), "active": active})
-    tenant.subscription_active = active
-    db.commit()
 
 
 class SubscriptionSource(Protocol):
@@ -45,9 +26,8 @@ class SubscriptionSource(Protocol):
 
 
 def check_all_subscriptions(db: Session, source: SubscriptionSource | None = None) -> dict[str, int]:
-    """Daily: re-read every installed shop's subscription. Shops whose Shopify ID
-    isn't known yet (never opened the app) are skipped; a failed read leaves the
-    flag as it was."""
+    from app.services.billing_reconcile_service import BillingReconcileService
+
     if source is None:
         from app.services.partner_billing_client import PartnerBillingClient
 
@@ -62,11 +42,12 @@ def check_all_subscriptions(db: Session, source: SubscriptionSource | None = Non
     for tenant in tenants:
         try:
             snapshot = source.fetch_active_subscription(f"gid://shopify/Shop/{tenant.shopify_shop_id}")
+            BillingReconcileService(db).reconcile(tenant.shop_domain, snapshot, BillingReconcileSource.SCHEDULED_WORKER)
         except Exception as exc:  # noqa: BLE001 — one shop must not stop the sweep
+            db.rollback()
             failed += 1
             logger.warn("subscription.check_failed", {"shop": tenant.shop_domain, "detail": str(exc)[:300]})
             continue
-        set_subscription_active(db, tenant, is_subscribed(snapshot))
         checked += 1
     logger.info("subscription.check_completed", {"checked": checked, "failed": failed})
     return {"checked": checked, "failed": failed}

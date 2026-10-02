@@ -1,11 +1,16 @@
-"""Billing reconcile state machine.
+"""Billing reconcile state machine (Shopify App Pricing, spec §5).
 
 Maps a Partner-API `activeSubscription` snapshot onto the tenant's subscription,
-emits an action, and writes an audit event. Upgrades apply immediately (+ reset
-usage); downgrades defer to cycle end via a pending plan — UNLESS the plan is
-still inside its Shopify free trial, in which case the downgrade applies
-immediately (there is no paid cycle to defer to — the bug this fixes gave the
-merchant a free stretch of the higher tier for ~30 days).
+emits an action, and writes an audit event. Shopify is the source of truth and
+this mirrors its standard plan changes, by catalog rank:
+- upgrade: effective at once;
+- downgrade: Shopify reports it as `pendingUpdate`; the higher plan stays
+  effective and the lower one is recorded as pending until the cycle ends —
+  UNLESS the plan is inside a free trial (no paid cycle to defer to), when it
+  applies at once;
+- cycle end: Shopify reports the lower plan as effective, which applies at once.
+No contract means the free handle ("none": no access). The tenant's
+``subscription_active`` (which gates Relays) follows the effective plan.
 """
 
 from __future__ import annotations
@@ -106,6 +111,9 @@ class BillingReconcileService:
 
         effective_after = self.billing.current_plan_handle(tenant.id)
         pending_after = self._pending_handle(self.billing.get_subscription(tenant.id))
+        # Any plan above "none" gives access; "none" stops the shop's Relays.
+        tenant.subscription_active = effective_after != free_plan_handle()
+        self.db.commit()
 
         if action != ReconcileAction.UNCHANGED:
             self._write_event(tenant, action, before_effective, effective_after, pending_after, source, snapshot)
@@ -123,19 +131,32 @@ class BillingReconcileService:
     def _with_contract(self, tenant, sub, snapshot: PartnerSubscriptionSnapshot, before_effective: str) -> ReconcileAction:
         effective = snapshot.effective_plan_handle
         if not effective or plan_by_handle(effective) is None:
+            logger.warn("billing.unknown_plan", {"shop": tenant.shop_domain, "planHandle": effective})
             return ReconcileAction.UNCHANGED
 
         on_trial = self._on_trial(sub)
         first_paid = sub is None or before_effective == free_plan_handle()
 
-        # Downgrade target: an explicit Shopify pendingChange (the usual "downgrade
-        # at cycle end"), or a lower effective plan than we currently record.
+        # Shopify already moved the shop to a lower plan (the cycle ended, or the
+        # downgrade had nothing to wait for): it is effective now.
+        if not first_paid and classify_change(before_effective, effective) == "downgrade":
+            self.billing.apply_plan_change(
+                tenant.id, effective, reset_usage=False,
+                period_start=snapshot.cycle_start, period_end=snapshot.cycle_end,
+                trial_ends_at=snapshot.trial_ends_at, clear_pending=True,
+            )
+            return ReconcileAction.DOWNGRADE_EFFECTIVE
+
+        # A downgrade Shopify holds until the end of the cycle (its pendingUpdate).
         downgrade_target: str | None = None
         pending = snapshot.pending_plan_handle
         if pending and plan_by_handle(pending) and classify_change(effective, pending) == "downgrade":
             downgrade_target = pending
-        elif not first_paid and classify_change(before_effective, effective) == "downgrade":
-            downgrade_target = effective
+
+        if downgrade_target and not first_paid and before_effective == effective and (
+            self._pending_handle(sub) == downgrade_target
+        ):
+            return ReconcileAction.UNCHANGED  # already scheduled
 
         if downgrade_target:
             if on_trial:

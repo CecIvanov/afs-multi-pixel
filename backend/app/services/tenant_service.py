@@ -55,7 +55,7 @@ class TenantService:
         refresh_token: str | None = None,
         access_token_expires_at: datetime | None = None,
         refresh_token_expires_at: datetime | None = None,
-        plan_handle: str = "free",
+        plan_handle: str | None = None,
     ) -> Tenant:
         existing = self.db.scalar(select(Tenant).where(Tenant.shop_domain == shop_domain))
         if existing:
@@ -75,7 +75,9 @@ class TenantService:
         self.db.add(tenant)
         self.db.flush()
 
-        self._attach_default_subscription(tenant, plan_handle=plan_handle)
+        from app.billing.plan_catalog import free_plan_handle
+
+        self._attach_default_subscription(tenant, plan_handle=plan_handle or free_plan_handle())
         self.db.commit()
         self.db.refresh(tenant)
         logger.info("tenant.created", {"tenantId": str(tenant.id), "shop": tenant.shop_domain})

@@ -59,10 +59,18 @@ For each Market, browse its domain with marketing consent given:
 - [ ] A Relay replayed from another Origin is rejected and logged.
 - [ ] A Relay for a Market → pixel pair that isn't in the mapping is rejected and logged.
 
-## 7. Plan (Production App only; UAT runs with billing disabled)
+## 7. Plans (Production App only; the UAT App is a custom app with no billing)
 
-- [ ] Without the plan, the admin shows only the Plan page, and Relays are rejected.
-- [ ] After choosing the plan, the Markets page loads with the plan badge.
+Plans are in `app.config.json` `billing.plans`, ranked `none` < `shopify-test` < `light`. Read the result after each step on the Plan page, and in `billing_subscription_events`.
+
+- [ ] With no plan, the admin shows only the Plan page, and Relays are rejected.
+- [ ] Choose **shopify-test** at install. The Markets page loads with the "Shopify test plan" badge, and events are sent.
+- [ ] Switch to **light**. It's an upgrade, effective at once (`upgrade_applied`).
+- [ ] Switch back to **shopify-test**. It's a downgrade:
+  - **light** stays effective.
+  - The Plan page says it changes to Shopify test at the end of the cycle (`downgrade_scheduled`, pending `shopify-test`).
+- [ ] After the cycle ends, **shopify-test** is effective and nothing is pending (`downgrade_effective`). This happens on the next app open or the daily check.
+- [ ] Cancel the plan. The shop is back on `none`: only the Plan page shows, and Relays are rejected.
 
 ## 8. Restart and uninstall
 

@@ -23,7 +23,6 @@ from app.schemas import (
     RelayOut,
     SetupIn,
     SetupOut,
-    SubscriptionIn,
     SummaryOut,
     PixelCheckIn,
     PixelCheckOut,
@@ -137,22 +136,27 @@ def billing_reconcile(payload: BillingReconcileIn, db: Session = Depends(get_db)
         source = BillingReconcileSource(payload.source)
     except ValueError:
         source = BillingReconcileSource.APP_LOAD
-    try:
-        result = BillingReconcileService(db).reconcile(payload.shop_domain, snapshot, source)
-    except ValueError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    from app.billing.plan_catalog import free_plan_handle
+    from app.services.relay_service import numeric_id
+
+    tenant = _tenant_or_404(db, payload.shop_domain)
+    if payload.shop_gid and (shop_id := numeric_id(payload.shop_gid)) is not None:
+        tenant.shopify_shop_id = shop_id
+        db.commit()
+    result = BillingReconcileService(db).reconcile(payload.shop_domain, snapshot, source)
     return BillingReconcileOut(
         status="ok",
         action=result.action.value,
         effective_plan_handle=result.effective_plan_handle,
         pending_plan_handle=result.pending_plan_handle,
+        subscribed=result.effective_plan_handle != free_plan_handle(),
     )
 
 
 @router.get("/tenants/by-shop/{shop_domain}/billing", response_model=BillingOut)
 def get_billing_by_shop(shop_domain: str, db: Session = Depends(get_db)) -> BillingOut:
     from app.billing.entitlements import _feature_min_rank
-    from app.billing.plan_catalog import plan_by_handle
+    from app.billing.plan_catalog import free_plan_handle, plan_by_handle
     from app.services.billing_service import BillingService
 
     tenant = TenantService(db).get_tenant_by_shop_domain(shop_domain)
@@ -173,6 +177,9 @@ def get_billing_by_shop(shop_domain: str, db: Session = Depends(get_db)) -> Bill
         plan_handle=handle,
         plan_name=plan.name if plan else handle,
         pending_plan_handle=pending,
+        pending_plan_name=(p.name if (p := plan_by_handle(pending)) else pending) if pending else None,
+        current_period_end=sub.current_period_end if sub else None,
+        subscribed=handle != free_plan_handle(),
         status=sub.status.value if sub else "none",
         used=counter.used,
         quota=plan.monthly_quota if plan else None,
@@ -336,17 +343,3 @@ def remove_market_pixel(
         return _market_out(markets.remove_pixel(tenant, market_id))
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-
-
-@router.post("/tenants/by-shop/{shop_domain}/subscription", response_model=SetupOut)
-def report_subscription(shop_domain: str, payload: SubscriptionIn, db: Session = Depends(get_db)) -> SetupOut:
-    """The BFF reports whether the shop's subscription to the one plan is active
-    (read from the Partner API on app open); without it Relays stop (spec §5)."""
-    from app.services.relay_service import numeric_id
-    from app.services.subscription_service import set_subscription_active
-
-    tenant = _tenant_or_404(db, shop_domain)
-    if payload.shop_gid and (shop_id := numeric_id(payload.shop_gid)) is not None:
-        tenant.shopify_shop_id = shop_id
-    set_subscription_active(db, tenant, payload.active)
-    return _setup_out(tenant)

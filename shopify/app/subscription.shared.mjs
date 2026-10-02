@@ -1,16 +1,14 @@
-// The one paid plan (spec §1, §5), billed by Shopify App Pricing. The app knows
-// only the plan's exact handle and reads the shop's subscription from the Partner
-// API. Pure, so node --test covers it.
+// Plan access (spec §1, §5), billed by Shopify App Pricing: the shop's plan is read
+// from the Partner API and reconciled in the backend. Pure, so node --test covers it.
 
 /**
- * @param {{ has_active_contract: boolean, effective_plan_handle: string | null } | null | undefined} snapshot
- * @param {string} planHandle
+ * Right after the merchant picks a plan, Shopify's redirect names it; the Partner
+ * API may not show it yet, so the redirect alone lets the merchant in this once.
+ * @param {boolean} subscribed  what the backend reconciled
+ * @param {string | null} hint  ?plan_handle=… from the redirect
  */
-export function isSubscribed(snapshot, planHandle) {
-  return Boolean(
-    snapshot?.has_active_contract &&
-      String(snapshot.effective_plan_handle ?? "").toLowerCase() === planHandle.toLowerCase(),
-  );
+export function honoursRedirectHint(subscribed, hint) {
+  return subscribed || Boolean(hint && hint !== "none");
 }
 
 /** Shopify redirects back with ?plan_handle=… once the merchant picks a plan. */

@@ -1,140 +1,196 @@
-"""Billing: plan catalog, entitlements + kill-switch, reconcile state machine
-(incl. the trial-downgrade-immediate fix), and metered usage."""
+"""Billing (spec §1, §5): Shopify App Pricing plans from app.config.json, ordered by
+rank — "none" (not subscribed) < "shopify-test" (free; Shopify's review plan) <
+"light". The reconcile state machine mirrors Shopify's standard plan changes: an
+upgrade applies at once; a downgrade stays pending until the cycle ends while the
+higher plan stays effective; once Shopify switches, the lower plan is effective.
+Any plan above "none" gives access."""
 
 from __future__ import annotations
 
-import types
 from datetime import UTC, datetime, timedelta
 
 import pytest
 from sqlalchemy import func, select
 
-from app.billing import entitlements
-from app.billing.plan_catalog import classify_change, normalize_shopify_plan_name
-from app.models import BillingReconcileSource, BillingSubscriptionEvent, TenantSubscription
+from app.billing.plan_catalog import classify_change, free_plan_handle, get_plans
+from app.models import BillingReconcileSource, BillingSubscriptionEvent, Tenant
 from app.services.billing_reconcile_service import BillingReconcileService, ReconcileAction
-from app.services.billing_service import BillingService, QuotaExceeded
+from app.services.billing_service import BillingService
 from app.services.partner_billing_client import PartnerSubscriptionSnapshot
 from app.services.tenant_service import TenantService
 
 SHOP = "billing-shop.myshopify.com"
+CYCLE_START = datetime(2026, 10, 1, tzinfo=UTC)
+CYCLE_END = datetime(2026, 10, 31, tzinfo=UTC)
 
 
-def _tenant(db):
+def _tenant(db) -> Tenant:
     return TenantService(db).sync_shopify_install(SHOP, access_token="tok")
 
 
-def _snapshot(**kw) -> PartnerSubscriptionSnapshot:
-    base = dict(has_active_contract=True, effective_plan_handle="pro")
+def _snapshot(effective: str | None = "light", pending: str | None = None, **kw) -> PartnerSubscriptionSnapshot:
+    base = dict(
+        has_active_contract=effective is not None,
+        effective_plan_handle=effective,
+        pending_plan_handle=pending,
+        cycle_start=CYCLE_START,
+        cycle_end=CYCLE_END,
+    )
     base.update(kw)
     return PartnerSubscriptionSnapshot(**base)
 
 
-# --- plan catalog (pure) ----------------------------------------------------
+def _reconcile(db, snapshot):
+    return BillingReconcileService(db).reconcile(SHOP, snapshot, BillingReconcileSource.APP_LOAD)
+
+
+def _subscribed(db, tenant) -> bool | None:
+    db.refresh(tenant)
+    return tenant.subscription_active
+
+
+# --- the catalog ---------------------------------------------------------------------
 @pytest.mark.unit
-def test_classify_change():
-    assert classify_change("free", "pro") == "upgrade"
-    assert classify_change("pro", "free") == "downgrade"
-    assert classify_change("free", "free") == "same"
+def test_the_catalog_ranks_none_then_shopify_test_then_light():
+    assert [p.handle for p in get_plans()] == ["none", "shopify-test", "light"]
+    assert free_plan_handle() == "none"
+    assert classify_change("shopify-test", "light") == "upgrade"
+    assert classify_change("light", "shopify-test") == "downgrade"
+    assert classify_change("none", "shopify-test") == "upgrade"
 
 
-@pytest.mark.unit
-def test_normalize_shopify_plan_name():
-    assert normalize_shopify_plan_name("Pro") == "pro"
-    assert normalize_shopify_plan_name("free") == "free"
-    assert normalize_shopify_plan_name("MyApp Pro") == "pro"
-    assert normalize_shopify_plan_name("nonsense") is None
-
-
-# --- entitlements -----------------------------------------------------------
-@pytest.mark.unit
-def test_feature_gates_by_rank():
-    assert entitlements.has_feature("pro", "example_premium_feature") is True
-    assert entitlements.has_feature("free", "example_premium_feature") is False
-    assert entitlements.has_feature("pro", "no_such_feature") is False
-
-
-@pytest.mark.unit
-def test_kill_switch_opens_all_gates(monkeypatch):
-    monkeypatch.setattr(
-        entitlements, "get_settings", lambda: types.SimpleNamespace(billing_enforcement_enabled=False)
-    )
-    # Enforcement off -> even a free tenant is treated as the top plan.
-    assert entitlements.has_feature("free", "example_premium_feature") is True
-
-
-# --- reconcile state machine ------------------------------------------------
 @pytest.mark.integration
-def test_reconcile_initial_selection(db):
-    _tenant(db)
-    result = BillingReconcileService(db).reconcile(SHOP, _snapshot(), BillingReconcileSource.APP_LOAD)
+def test_a_new_install_has_no_plan(db):
+    tenant = _tenant(db)
+
+    assert BillingService(db).current_plan_handle(tenant.id) == "none"
+
+
+# --- the standard Shopify plan changes ------------------------------------------------
+@pytest.mark.integration
+def test_choosing_shopify_test_at_install_gives_access(db):
+    tenant = _tenant(db)
+
+    result = _reconcile(db, _snapshot("shopify-test"))
+
     assert result.action == ReconcileAction.INITIAL_SELECTION
-    assert result.effective_plan_handle == "pro"
-    # audit event written
+    assert result.effective_plan_handle == "shopify-test"
+    assert _subscribed(db, tenant) is True
     assert db.scalar(select(func.count()).select_from(BillingSubscriptionEvent)) == 1
 
 
 @pytest.mark.integration
-def test_reconcile_trial_downgrade_applies_immediately(db):
-    """THE fix: a downgrade while on a free trial applies now, not at a cycle end
-    that never comes."""
-    tenant = _tenant(db)
-    future = datetime.now(UTC) + timedelta(days=7)
-    BillingService(db).apply_plan_change(tenant.id, "pro", trial_ends_at=future)
+def test_shopify_test_to_light_is_an_upgrade_effective_at_once(db):
+    _tenant(db)
+    _reconcile(db, _snapshot("shopify-test"))
 
-    result = BillingReconcileService(db).reconcile(
-        SHOP, _snapshot(effective_plan_handle="pro", pending_plan_handle="free"), BillingReconcileSource.APP_LOAD
-    )
-    assert result.action == ReconcileAction.CANCELLED_TO_FREE
-    assert result.effective_plan_handle == "free"  # applied immediately, not scheduled
+    result = _reconcile(db, _snapshot("light"))
+
+    assert result.action == ReconcileAction.UPGRADE_APPLIED
+    assert (result.effective_plan_handle, result.pending_plan_handle) == ("light", None)
 
 
 @pytest.mark.integration
-def test_reconcile_downgrade_scheduled_when_not_on_trial(db):
+def test_light_to_shopify_test_waits_for_the_end_of_the_cycle(db):
     tenant = _tenant(db)
-    BillingService(db).apply_plan_change(tenant.id, "pro", trial_ends_at=None)
+    _reconcile(db, _snapshot("shopify-test"))
+    _reconcile(db, _snapshot("light"))
 
-    result = BillingReconcileService(db).reconcile(
-        SHOP, _snapshot(effective_plan_handle="pro", pending_plan_handle="free"), BillingReconcileSource.APP_LOAD
-    )
-    assert result.action == ReconcileAction.CANCEL_SCHEDULED
-    assert result.effective_plan_handle == "pro"  # still on pro until cycle end
-    assert result.pending_plan_handle == "free"
+    # Shopify keeps light until the cycle ends and reports shopify-test as pending.
+    result = _reconcile(db, _snapshot("light", pending="shopify-test"))
+
+    assert result.action == ReconcileAction.DOWNGRADE_SCHEDULED
+    assert (result.effective_plan_handle, result.pending_plan_handle) == ("light", "shopify-test")
+    assert _subscribed(db, tenant) is True
+    # Seeing the same pending change again changes nothing.
+    assert _reconcile(db, _snapshot("light", pending="shopify-test")).action == ReconcileAction.UNCHANGED
 
 
 @pytest.mark.integration
-def test_reconcile_no_contract_cancels_to_free(db):
-    tenant = _tenant(db)
-    BillingService(db).apply_plan_change(tenant.id, "pro", trial_ends_at=None)
-    result = BillingReconcileService(db).reconcile(
-        SHOP, PartnerSubscriptionSnapshot(has_active_contract=False), BillingReconcileSource.APP_LOAD
-    )
-    assert result.action == ReconcileAction.CANCELLED_TO_FREE
-    assert result.effective_plan_handle == "free"
+def test_at_the_end_of_the_cycle_the_pending_plan_becomes_effective(db):
+    _tenant(db)
+    _reconcile(db, _snapshot("light"))
+    _reconcile(db, _snapshot("light", pending="shopify-test"))
+
+    # The cycle ended: Shopify now reports shopify-test as the effective plan.
+    next_cycle = dict(cycle_start=CYCLE_END, cycle_end=CYCLE_END + timedelta(days=30))
+    result = _reconcile(db, _snapshot("shopify-test", **next_cycle))
+
+    assert result.action == ReconcileAction.DOWNGRADE_EFFECTIVE
+    assert (result.effective_plan_handle, result.pending_plan_handle) == ("shopify-test", None)
+    assert _reconcile(db, _snapshot("shopify-test", **next_cycle)).action == ReconcileAction.UNCHANGED
 
 
 @pytest.mark.integration
-def test_apply_pending_if_due_when_cycle_ended(db):
+def test_a_scheduled_downgrade_applies_once_our_recorded_cycle_has_ended(db):
     tenant = _tenant(db)
     billing = BillingService(db)
-    billing.apply_plan_change(tenant.id, "pro", trial_ends_at=None)
-    billing.schedule_pending_plan(tenant.id, "free")
-    # Force the cycle to have ended.
+    _reconcile(db, _snapshot("light"))
+    _reconcile(db, _snapshot("light", pending="shopify-test"))
     sub = billing.get_subscription(tenant.id)
     sub.current_period_end = datetime.now(UTC) - timedelta(days=1)
     db.commit()
 
     assert billing.apply_pending_if_due(tenant.id) is True
-    assert billing.current_plan_handle(tenant.id) == "free"
+    assert billing.current_plan_handle(tenant.id) == "shopify-test"
 
 
-# --- metered usage ----------------------------------------------------------
 @pytest.mark.integration
-def test_usage_quota_guard(db):
-    tenant = _tenant(db)  # free plan, quota 50
-    billing = BillingService(db)
-    for _ in range(50):
-        assert billing.try_consume(tenant.id) is True
-    assert billing.try_consume(tenant.id) is False  # 51st exceeds
-    with pytest.raises(QuotaExceeded):
-        billing.ensure_within_quota(tenant.id)
+def test_cancelling_the_subscription_removes_access(db):
+    tenant = _tenant(db)
+    _reconcile(db, _snapshot("light"))
+
+    result = _reconcile(db, _snapshot(None))
+
+    assert result.effective_plan_handle == "none"
+    assert _subscribed(db, tenant) is False
+
+
+@pytest.mark.integration
+def test_a_renewal_moves_the_cycle_forward(db):
+    tenant = _tenant(db)
+    _reconcile(db, _snapshot("light"))
+
+    result = _reconcile(db, _snapshot("light", cycle_start=CYCLE_END, cycle_end=CYCLE_END + timedelta(days=30)))
+
+    assert result.action == ReconcileAction.SUBSCRIPTION_RENEWED
+    assert BillingService(db).get_subscription(tenant.id).current_period_end == CYCLE_END + timedelta(days=30)
+
+
+@pytest.mark.integration
+def test_a_plan_shopify_reports_that_the_catalog_doesnt_know_changes_nothing(db):
+    tenant = _tenant(db)
+    _reconcile(db, _snapshot("light"))
+
+    result = _reconcile(db, _snapshot("enterprise"))
+
+    assert result.action == ReconcileAction.UNCHANGED
+    assert BillingService(db).current_plan_handle(tenant.id) == "light"
+
+
+@pytest.mark.integration
+def test_a_downgrade_during_a_trial_applies_at_once(db):
+    """No paid cycle to wait for (spec: no trial today, but plans may get one)."""
+    tenant = _tenant(db)
+    BillingService(db).apply_plan_change(tenant.id, "light", trial_ends_at=datetime.now(UTC) + timedelta(days=7))
+
+    result = _reconcile(db, _snapshot("light", pending="shopify-test"))
+
+    assert result.action == ReconcileAction.DOWNGRADE_EFFECTIVE
+    assert result.effective_plan_handle == "shopify-test"
+
+
+@pytest.mark.integration
+def test_a_future_higher_plan_follows_the_same_rules(db, monkeypatch):
+    from app.billing import plan_catalog
+    from app.services.plan_catalog_sync import sync_plan_catalog
+
+    plans = (*get_plans(), plan_catalog.PlanSpec("pro", "Pro", 30, "pro", None, ()))
+    monkeypatch.setattr(plan_catalog, "get_plans", lambda: plans)
+    sync_plan_catalog(db)
+    _tenant(db)
+    _reconcile(db, _snapshot("light"))
+
+    assert _reconcile(db, _snapshot("pro")).action == ReconcileAction.UPGRADE_APPLIED
+    scheduled = _reconcile(db, _snapshot("pro", pending="light"))
+    assert (scheduled.effective_plan_handle, scheduled.pending_plan_handle) == ("pro", "light")
