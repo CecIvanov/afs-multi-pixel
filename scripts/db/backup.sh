@@ -3,7 +3,7 @@
 # backup.sh — nightly Postgres dump of one stack, kept 14 days, copied off the VPS
 # (spec §8).
 #
-#   ./scripts/db/backup.sh uat          # or prd
+#   ./scripts/db/backup.sh uat          # or production
 #
 # Writes <BACKUP_DIR>/<db>-<UTC timestamp>.dump (pg_dump custom format), deletes
 # local dumps older than BACKUP_RETENTION_DAYS (14), and, when BACKUP_REMOTE is set
@@ -13,14 +13,14 @@
 # off-VPS copy). DATABASE_URL in the environment overrides the stack's database.
 #
 # Cron (on the VPS, as the deploy user):
-#   15 2 * * * cd /srv/afs-multi-pixel && ./scripts/db/backup.sh prd >> /var/log/afs-backup-prd.log 2>&1
+#   15 2 * * * cd /srv/afs-multi-pixel && ./scripts/db/backup.sh production >> /var/log/afs-backup-production.log 2>&1
 
 set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
 # shellcheck source=../lib/db.sh
 source "${ROOT_DIR}/scripts/lib/db.sh"
 
-ENV_NAME="${1:?usage: backup.sh <uat|prd|dev>}"
+ENV_NAME="${1:?usage: backup.sh <uat|production|dev>}"
 if [[ -z "${DATABASE_URL:-}" ]]; then
   db_connection_env "${ENV_NAME}"
 fi

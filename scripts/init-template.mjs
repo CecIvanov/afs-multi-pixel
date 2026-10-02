@@ -29,12 +29,12 @@ const REWRITE_FILES = [
   "docker-compose.yml",
   "docker-compose.dev.yml",
   "docker-compose.uat.yml",
-  "docker-compose.prd.yml",
+  "docker-compose.production.yml",
   "docker-compose.test.yml",
   "backend/app/config.py",
   ".env.example",
-  ".env.uat.example",
-  ".env.prd.example",
+  ".env.uat",
+  ".env.production",
   ".env.test.example",
   "README.md",
 ];
@@ -43,7 +43,7 @@ const REWRITE_FILES = [
 const ENV_TOMLS = [
   { file: "shopify/shopify.app.toml", nameSuffix: "", handleSuffix: "" },       // base / dev
   { file: "shopify/shopify.app.uat.toml", nameSuffix: " (UAT)", handleSuffix: "-uat" },
-  { file: "shopify/shopify.app.prd.toml", nameSuffix: "", handleSuffix: "-prd" },
+  { file: "shopify/shopify.app.production.toml", nameSuffix: "", handleSuffix: "-production" },
 ];
 
 function slugify(name) {
@@ -122,15 +122,12 @@ async function main() {
     writeFileSync(p, text);
   }
 
-  // 4) Create per-env files from the examples (never overwrite) — dev/uat/prd
-  //    are separate environments from day 0.
+  // 4) Create dev's local files from the examples (never overwrite). .env.uat and
+  //    .env.production are committed; .credentials.uat / .credentials.production
+  //    are created on the VPS from .credentials.example.
   const envFiles = [
     [".env.example", ".env.dev"],
-    [".env.uat.example", ".env.uat"],
-    [".env.prd.example", ".env.prd"],
     [".credentials.example", ".credentials.dev"],
-    [".credentials.example", ".credentials.uat"],
-    [".credentials.example", ".credentials.prd"],
   ];
   for (const [example, target] of envFiles) {
     const src = join(ROOT, example);
@@ -139,11 +136,11 @@ async function main() {
   }
 
   console.log(`\n✅ Initialized "${name}" (slug: ${slug}).`);
-  console.log(`   Shopify apps: ${handle} (dev) · ${handle}-uat · ${handle}-prd — three separate apps.\n`);
-  console.log("Next steps (repeat per environment — dev, uat, prd):");
+  console.log(`   Shopify apps: ${handle} (dev) · ${handle}-uat · ${handle}-production — three separate apps.\n`);
+  console.log("Next steps (repeat per environment — dev, uat, production):");
   console.log("  1. Create a Shopify Partner app for each env; put its client id/secret in .credentials.<env>");
-  console.log("  2. cd shopify && npm install && npm run config:link[:uat|:prd]");
-  console.log("  3. ./scripts/start.sh dev     (or uat / prd — separate stacks)");
+  console.log("  2. cd shopify && npm install && npm run config:link[:uat|:production]");
+  console.log("  3. ./scripts/start.sh dev     (or uat / production — separate stacks)");
   console.log("  4. See docs/SETUP.md for the full walk-through.\n");
 }
 

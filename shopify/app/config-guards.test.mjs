@@ -15,9 +15,9 @@ const repoRoot = join(shopifyDir, "..");
 const appConfig = JSON.parse(readFileSync(join(repoRoot, "app.config.json"), "utf8"));
 const shopifyServer = readFileSync(join(appDir, "shopify.server.ts"), "utf8");
 
-// dev/uat/prd are SEPARATE Shopify apps; each toml is standalone, so scopes +
+// dev/uat/production are SEPARATE Shopify apps; each toml is standalone, so scopes +
 // api_version must be kept identical across all of them (and app.config.json).
-const ENV_TOMLS = ["shopify.app.toml", "shopify.app.uat.toml", "shopify.app.prd.toml"];
+const ENV_TOMLS = ["shopify.app.toml", "shopify.app.uat.toml", "shopify.app.production.toml"];
 
 function tomlValue(toml, key) {
   const m = toml.match(new RegExp(`^\\s*${key}\\s*=\\s*"([^"]*)"`, "m"));
@@ -86,8 +86,8 @@ test("runtime SCOPES in env examples and the compose default agree with app.conf
   const configScopes = (appConfig.shopify?.scopes || []).join(",");
   const copies = [
     [".env.example", /^SCOPES=(.*)$/m],
-    [".env.uat.example", /^SCOPES=(.*)$/m],
-    [".env.prd.example", /^SCOPES=(.*)$/m],
+    [".env.uat", /^SCOPES=(.*)$/m],
+    [".env.production", /^SCOPES=(.*)$/m],
     ["docker-compose.yml", /SCOPES: \$\{SCOPES:-([^}]*)\}/],
   ];
   for (const [file, regex] of copies) {
@@ -136,5 +136,17 @@ test("the v1 webhook topics are all subscribed", () => {
     "shop/redact",
   ]) {
     assert.match(subs, new RegExp(`[=,]${topic}[, ]`), `${topic} is not subscribed`);
+  }
+});
+
+// .env.uat and .env.production are committed, so they must never carry a secret:
+// every key the .credentials.<stack> files hold is forbidden in them.
+test("committed .env.uat / .env.production define no secret from .credentials.example", () => {
+  const keys = (text) => [...text.matchAll(/^([A-Z][A-Z0-9_]*)=/gm)].map((m) => m[1]);
+  const secretKeys = new Set(keys(readRepoFile(".credentials.example")));
+  assert.ok(secretKeys.has("TOKEN_ENC_KEY") && secretKeys.has("SHOPIFY_API_SECRET"));
+  for (const file of [".env.uat", ".env.production"]) {
+    const leaked = keys(readRepoFile(file)).filter((key) => secretKeys.has(key));
+    assert.deepEqual(leaked, [], `${file} defines secrets; move them to .credentials.<stack> on the VPS`);
   }
 });

@@ -1,13 +1,13 @@
 # PRODUCTION — a SEPARATE Shopify app (own client_id, URL, database, backend stack).
-# Link it: cd shopify && shopify app config link --config shopify.app.prd.toml
-# Deploy:  npm run deploy:prd
+# Link it: cd shopify && npm run config:link:production
+# Deploy:  npm run deploy:production
 #
 # Keep [access_scopes] and [webhooks] identical to shopify.app.toml — Shopify reads
 # each toml standalone, so scope/webhook changes must be mirrored across all envs.
 
 client_id = ""
 name = "AFS Multi Pixel"
-handle = "afs-multi-pixel-prd"
+handle = "afs-multi-pixel-production"
 application_url = "https://app.example.com/app"
 embedded = true
 

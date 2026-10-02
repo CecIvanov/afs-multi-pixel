@@ -53,17 +53,18 @@ npm run dev              # opens a tunnel, sets URLs, installs on a dev store
 
 **Option B — the full Docker stack (UI + API + worker + beat + jobs + Postgres + Redis):**
 ```bash
-./scripts/start.sh dev          # dev · uat · prd are separate stacks
+./scripts/start.sh dev          # dev · uat · production are separate stacks
 ```
 The API applies migrations on boot and seeds the plan catalog. The UI serves the
 embedded app; point your Partner app's App URL at it (behind a tunnel/HTTPS).
 
 ## 7. Repeat for UAT and production
 
-`dev`, `uat`, and `prd` are **separate Shopify apps + databases + backends** (see
-the Environments table in the README). For each: create its Partner app, fill
-`.credentials.<env>`, `npm run config:link:<env>`, then `./scripts/start.sh <env>`
-and `npm run deploy:<env>`. UAT ships with `BILLING_ENFORCEMENT_ENABLED=false` so
+`dev`, `uat`, and `production` are **separate Shopify apps + databases + backends**
+(see the Environments table in the README). For each: create its Partner app, set
+its non-secret values in the committed `.env.<env>`, create `.credentials.<env>` on
+the VPS from `.credentials.example` (never committed), `npm run config:link:<env>`,
+then `./scripts/start.sh <env>` and `npm run deploy:<env>`. UAT ships with `BILLING_ENFORCEMENT_ENABLED=false` so
 every plan gate is open for testing.
 
 ## 6. Verify the install round-trip

@@ -3,11 +3,15 @@
 !.credentials.example
 !.credentials.*.example
 
-# Per-stack env files — only the .example twins are committed
+# Per-stack env files. .env.uat and .env.production hold only non-secret settings
+# and are committed; dev's .env.dev stays local (copied from .env.example).
+# Secrets are in .credentials.<stack>, which is never committed.
 .env
 .env.*
 !.env.example
 !.env.*.example
+!.env.uat
+!.env.production
 
 # Node
 node_modules/

@@ -4,7 +4,7 @@
 #
 #   ./scripts/start.sh            # dev (default)
 #   ./scripts/start.sh uat
-#   ./scripts/start.sh prd
+#   ./scripts/start.sh production
 #
 # Each env is a SEPARATE stack (own Shopify app, database, containers, ports) —
 # see docker-compose.<env>.yml + .env.<env> + .credentials.<env>. They coexist on

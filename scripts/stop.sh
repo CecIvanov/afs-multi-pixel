@@ -4,7 +4,7 @@
 #
 #   ./scripts/stop.sh              # dev
 #   ./scripts/stop.sh uat
-#   ./scripts/stop.sh prd --volumes
+#   ./scripts/stop.sh production --volumes
 
 set -euo pipefail
 ENV_NAME="${1:-dev}"

@@ -1,8 +1,8 @@
 # Convenience targets. Run `make help` for the list.
-# dev/uat/prd are SEPARATE stacks (own Shopify app, database, backend).
+# dev/uat/production are SEPARATE stacks (own Shopify app, database, backend).
 .DEFAULT_GOAL := help
 ENV ?= dev
-.PHONY: help init dev uat prd stop logs db-setup test test-isolated test-ui
+.PHONY: help init dev uat production stop logs db-setup test test-isolated test-ui
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -17,8 +17,8 @@ dev: ## Bring up the DEV stack
 uat: ## Bring up the UAT stack (separate Shopify app + db + backend)
 	./scripts/start.sh uat
 
-prd: ## Bring up the PRODUCTION stack (separate Shopify app + db + backend)
-	./scripts/start.sh prd
+production: ## Bring up the PRODUCTION stack (separate Shopify app + db + backend)
+	./scripts/start.sh production
 
 stop: ## Stop a stack (make stop ENV=uat)
 	./scripts/stop.sh $(ENV)

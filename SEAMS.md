@@ -18,7 +18,7 @@ shell (`scripts/lib/config.sh`), Node (`scripts/config.mjs`), and Python
 ## 2. Scopes & API version — kept in sync across every env toml
 
 There are three separate Shopify-app tomls (`shopify.app.toml` = dev,
-`shopify.app.uat.toml`, `shopify.app.prd.toml`); each is standalone, so scopes +
+`shopify.app.uat.toml`, `shopify.app.production.toml`); each is standalone, so scopes +
 webhooks must be **identical across all three** and match `app.config.json`.
 
 - **Scopes**: `app.config.json` `shopify.scopes` **and** the `[access_scopes]` of
@@ -27,15 +27,22 @@ webhooks must be **identical across all three** and match `app.config.json`.
   `api_version`, and `shopify/app/shopify.server.ts` (`ApiVersion.*`). Same guard.
 - **Other copies** the same guard file checks: the API-version fallbacks in
   `backend/app/services/shopify_shop_info_service.py` and `scripts/lib/config.sh`,
-  the version in `docs/SETUP.md` and `README.md`, and the runtime `SCOPES` in every
-  `.env*.example` and the `docker-compose.yml` default.
+  the version in `docs/SETUP.md` and `README.md`, and the runtime `SCOPES` in
+  `.env.example`, `.env.uat`, `.env.production` and the `docker-compose.yml` default.
 
-## 2a. Environments — dev / uat / prd (separate apps)
+## 2a. Environments — dev / uat / production (separate apps)
 
 Each env is a separate Shopify app + database + backend. Per-env identity lives in
 `shopify.app.<env>.toml` (client_id/handle/URL) + `.env.<env>` (ports, handle, URL)
-+ `.credentials.<env>` (secrets). `init-template` scaffolds all of it; the shared
-identity (name/slug/plans) stays in `app.config.json`.
++ `.credentials.<env>` (secrets); the shared identity (name/slug/plans) stays in
+`app.config.json`.
+
+- `.env.uat` and `.env.production` hold only **non-secret** settings and are
+  **committed**: change them in git, then pull on the VPS.
+- `.credentials.uat` and `.credentials.production` hold the **secrets** and are
+  **never committed**: create them on the VPS from `.credentials.example` and edit
+  them there (`chmod 600`).
+- dev keeps both local: `.env.dev` (from `.env.example`) + `.credentials.dev`.
 
 ## 3. Backend behavior — `afterAuth` / post-install
 

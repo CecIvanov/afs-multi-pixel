@@ -195,35 +195,38 @@ Full walk-through in [`docs/SETUP.md`](docs/SETUP.md).
 ## Environments
 
 The template ships **three separate environments from day 0** — `dev`, `uat`, and
-`prd` — each a **separate Shopify app, database, and backend stack**. They can run
+`production` — each a **separate Shopify app, database, and backend stack**. They can run
 side-by-side on one host.
 
-| Concern | dev | uat | prd |
+| Concern | dev | uat | production |
 | --- | --- | --- | --- |
-| Shopify app (toml) | `shopify.app.toml` | `shopify.app.uat.toml` | `shopify.app.prd.toml` |
-| App handle | `<handle>` | `<handle>-uat` | `<handle>-prd` |
-| Database | `<slug>_dev` | `<slug>_uat` | `<slug>_prd` |
-| Containers | `<slug>-*-dev` | `<slug>-*-uat` | `<slug>-*-prd` |
+| Shopify app (toml) | `shopify.app.toml` | `shopify.app.uat.toml` | `shopify.app.production.toml` |
+| App handle | `<handle>` | `<handle>-uat` | `<handle>-production` |
+| Database | `<slug>_dev` | `<slug>_uat` | `<slug>` (bare) |
+| Containers | `<slug>-*-dev` | `<slug>-*-uat` | `<slug>-*-production` |
 | Ports (UI/API) | 3000 / 8000 | 3010 / 8010 | 3020 / 8020 |
 | Billing enforcement | on | **off** (open gates for testing) | on |
-| Env files | `.env.dev` + `.credentials.dev` | `.env.uat` + `.credentials.uat` | `.env.prd` + `.credentials.prd` |
+| Settings (non-secret) | `.env.dev` (local) | `.env.uat` (**committed**) | `.env.production` (**committed**) |
+| Secrets | `.credentials.dev` (local) | `.credentials.uat` (VPS only) | `.credentials.production` (VPS only) |
 
-`init-template` creates all six env files and stamps the three tomls. Then, **per
+`.env.uat` / `.env.production` hold only non-secret settings and live in git. The
+`.credentials.<env>` files hold the secrets, are never committed, and are created and
+edited directly on the VPS from `.credentials.example` (`chmod 600`). Then, **per
 environment**:
 
 ```bash
-# 1. Create a Partner app for the env; put its client id/secret in .credentials.<env>
+# 1. Create a Partner app for the env; put its client id/secret in .credentials.<env> (on the VPS)
 # 2. Link the env's toml:
-cd shopify && npm run config:link:uat     # or config:link (dev) / config:link:prd
+cd shopify && npm run config:link:uat     # or config:link (dev) / config:link:production
 # 3. Bring the env's stack up (separate db + backend):
-./scripts/start.sh uat                    # dev · uat · prd
+./scripts/start.sh uat                    # dev · uat · production
 # 4. Deploy the env's extensions/config:
-npm run deploy:uat                        # deploy (dev) · deploy:uat · deploy:prd
+npm run deploy:uat                        # deploy (dev) · deploy:uat · deploy:production
 ```
 
 Separation is mechanical: every container name, image tag, volume, compose
 project, and Celery/Redis key prefix is suffixed with the env, and the ports
-differ — so `dev`, `uat`, and `prd` never collide on one machine.
+differ — so `dev`, `uat`, and `production` never collide on one machine.
 
 ---
 

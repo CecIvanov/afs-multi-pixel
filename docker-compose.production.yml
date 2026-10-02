@@ -1,5 +1,6 @@
 # PRODUCTION overlay — a SEPARATE stack from dev and uat. Used by
-# ./scripts/start.sh prd with .env.prd + .credentials.prd.
+# ./scripts/start.sh production with .env.production (committed) +
+# .credentials.production (on the VPS only).
 #
 # For a real deployment you will typically:
 #   - externalize Postgres (host DB via host.docker.internal + pg_hba, or a managed
