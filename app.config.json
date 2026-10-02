@@ -3,10 +3,10 @@
     "name": "AFS Multi Pixel",
     "handle": "afs-multi-pixel",
     "slug": "afsmultipixel",
-    "supportEmail": "support@example.com",
+    "supportEmail": "support@adfeedstudio.com",
     "primaryLocale": "en",
-    "privacyPolicyUrl": "https://example.com/privacy",
-    "termsUrl": "https://example.com/terms"
+    "privacyPolicyUrl": "https://afs-multi-pixel.adfeedstudio.com/privacy",
+    "termsUrl": "https://afs-multi-pixel.adfeedstudio.com/terms"
   },
   "identifiers": {
     "_comment": "Derived from app.slug by default. Only override if you must avoid a name collision on a shared host. These drive Docker image tags, container names, the shared network, the Celery/Redis key prefix and the database name — i.e. everything that keeps stacks isolated on one machine.",
@@ -19,7 +19,7 @@
   },
   "support": {
     "_comment": "Support channels shown on the Help page. The Viber floating button is opt-in: set viber.enabled true and a real number to show it on every admin screen.",
-    "email": "support@example.com",
+    "email": "support@adfeedstudio.com",
     "viber": {
       "enabled": false,
       "numberE164": "15550000000",

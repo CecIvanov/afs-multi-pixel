@@ -11,7 +11,7 @@
 #   /app, /auth/*          the embedded admin and Shopify OAuth
 #   /webhooks/*            Shopify webhooks (HMAC-checked by the app, then stored)
 #   /api/events            Relays from the storefront and checkout (text/plain, no CORS)
-#   /legal/privacy.html    the privacy policy
+#   /legal/privacy.html    the privacy policy (public as afs-multi-pixel.adfeedstudio.com/privacy, below)
 # The Python backend (API_PORT) and worker metrics stay on 127.0.0.1 only.
 #
 # The app reads the shopper's IP from the LAST X-Forwarded-For hop
@@ -22,6 +22,7 @@
 # PREREQUISITES
 #   1. DNS A records -> VPS Black's public IP:
 #        multi-pixel-uat.adfeedstudio.com   multi-pixel-prd.adfeedstudio.com
+#        afs-multi-pixel.adfeedstudio.com
 #   2. The stacks are up on that host:  ./scripts/start-uat.sh   /   ./scripts/start-production.sh
 #   3. SHOPIFY_APP_URL in .env.uat / .env.production equals the https domain below
 #      (it also builds the storefront's Relay endpoint <URL>/api/events), and the
@@ -59,5 +60,27 @@ multi-pixel-prd.adfeedstudio.com {
 		header_up X-Forwarded-Host {host}
 		header_up X-Forwarded-Proto {scheme}
 		header_up X-Real-IP {remote_host}
+	}
+}
+
+# ----------------------------------------- AFS Multi Pixel — public legal pages
+# The App Store listing's privacy policy and terms. Only these two paths are
+# public on this host; they are the static pages the Production UI serves at
+# /legal/*.html. Everything else is a 404 (the app itself lives on multi-pixel-prd).
+#   DNS: afs-multi-pixel.adfeedstudio.com A -> this VPS's public IP
+afs-multi-pixel.adfeedstudio.com {
+	encode zstd gzip
+
+	@legal path /privacy /terms
+	handle @legal {
+		rewrite /privacy /legal/privacy.html
+		rewrite /terms /legal/terms.html
+		reverse_proxy 127.0.0.1:3120 {
+			header_up X-Forwarded-Proto {scheme}
+		}
+	}
+
+	handle {
+		respond "Not found" 404
 	}
 }
