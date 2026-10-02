@@ -8,14 +8,14 @@
 client_id = ""
 name = "AFS Multi Pixel"
 handle = "afs-multi-pixel-production"
-application_url = "https://app.example.com/app"
+application_url = "https://multi-pixel-prd.adfeedstudio.com/app"
 embedded = true
 
 [access_scopes]
 scopes = "read_markets,write_pixels,read_customer_events,read_orders"
 
 [auth]
-redirect_urls = [ "https://app.example.com/auth/callback" ]
+redirect_urls = [ "https://multi-pixel-prd.adfeedstudio.com/auth/callback" ]
 
 [webhooks]
 api_version = "2026-10"

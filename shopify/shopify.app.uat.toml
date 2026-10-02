@@ -8,14 +8,14 @@
 client_id = ""
 name = "AFS Multi Pixel (UAT)"
 handle = "afs-multi-pixel-uat"
-application_url = "https://uat.example.com/app"
+application_url = "https://multi-pixel-uat.adfeedstudio.com/app"
 embedded = true
 
 [access_scopes]
 scopes = "read_markets,write_pixels,read_customer_events,read_orders"
 
 [auth]
-redirect_urls = [ "https://uat.example.com/auth/callback" ]
+redirect_urls = [ "https://multi-pixel-uat.adfeedstudio.com/auth/callback" ]
 
 [webhooks]
 api_version = "2026-10"
