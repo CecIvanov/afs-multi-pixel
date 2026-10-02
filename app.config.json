@@ -5,8 +5,8 @@
     "slug": "afsmultipixel",
     "supportEmail": "support@adfeedstudio.com",
     "primaryLocale": "en",
-    "privacyPolicyUrl": "https://afs-multi-pixel.adfeedstudio.com/privacy",
-    "termsUrl": "https://afs-multi-pixel.adfeedstudio.com/terms"
+    "privacyPolicyUrl": "https://multi-pixel-prd.adfeedstudio.com/privacy",
+    "termsUrl": "https://multi-pixel-prd.adfeedstudio.com/terms"
   },
   "identifiers": {
     "_comment": "Derived from app.slug by default. Only override if you must avoid a name collision on a shared host. These drive Docker image tags, container names, the shared network, the Celery/Redis key prefix and the database name — i.e. everything that keeps stacks isolated on one machine.",
