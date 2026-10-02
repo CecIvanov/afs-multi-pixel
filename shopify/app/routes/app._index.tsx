@@ -328,7 +328,7 @@ function MarketTile({
         <s-badge tone={problem ? "critical" : "success"}>{problem ? "Token problem" : "Sending"}</s-badge>
       </div>
       <div>
-        <s-text color="subdued">Pixel</s-text> <s-text>{market.pixel.pixel_name ?? "Unnamed pixel"}</s-text>{" "}
+        <s-text color="subdued">Pixel</s-text> {market.pixel.pixel_name ? <s-text>{market.pixel.pixel_name}</s-text> : null}{" "}
         <span className={styles.mono}>{market.pixel.pixel_id}</span>
       </div>
       {problem ? (
@@ -496,19 +496,21 @@ function PixelEditor({ market, onSaved }: { market: MarketRecord; onSaved: () =>
         onInput={(e) => setToken(value(e))}
         onChange={(e) => setToken(value(e))}
       />
-      <s-text-field
-        label="Test event code"
-        value={testEventCode}
-        placeholder="TEST12345"
-        details="Optional. Only while you test in Events Manager; clear it for real traffic."
-        onInput={(e) => setTestEventCode(value(e))}
-        onChange={(e) => setTestEventCode(value(e))}
-      />
+      {/* Adding a pixel is just ID + token; testing in Events Manager comes after it's saved. */}
+      {market.pixel ? (
+        <s-text-field
+          label="Test event code"
+          value={testEventCode}
+          placeholder="TEST12345"
+          details="Optional. Only while you test in Events Manager; clear it for real traffic."
+          onInput={(e) => setTestEventCode(value(e))}
+          onChange={(e) => setTestEventCode(value(e))}
+        />
+      ) : null}
       {showCheck ? (
         showCheck.ok ? (
-          <s-banner tone="success" heading="Meta found this pixel">
-            {showCheck.pixel_name ?? "This pixel"}
-            {showCheck.owner_name ? ` (owned by ${showCheck.owner_name})` : ""}. The token can read it.
+          <s-banner tone="success" heading="Meta accepted this pixel and token">
+            The token can send events to this pixel.
           </s-banner>
         ) : (
           <s-banner tone="critical" heading="Check with Meta failed">

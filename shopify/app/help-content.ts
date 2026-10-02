@@ -51,7 +51,7 @@ export const HOWTO: HowtoItem[] = [
   {
     title: "Check events in Meta Events Manager",
     steps: [
-      "In the pixel editor, add a test event code from Events Manager → Test events, and save.",
+      "Once the pixel is saved, choose \"Edit pixel\" on the Market's tile, add a test event code from Events Manager → Test events, and save.",
       "Visit your store on the Market's domain, allow cookies, view a product, add it to the cart and check out.",
       "In Test events, each event should appear once, received from both Browser and Server.",
       "Repeat for each Market and check that each pixel only gets its own Market's events.",

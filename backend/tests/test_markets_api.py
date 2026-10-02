@@ -73,7 +73,7 @@ def test_check_returns_metas_answer(db, client, fakes):
     response = client.post(f"{BASE}/101/pixel/check", json={"pixel_id": PIXEL, "token": TOKEN}, headers=INTERNAL_HEADERS)
 
     assert response.status_code == 200
-    assert response.json() == {"ok": True, "pixel_name": "Dontmiss BG", "owner_name": "Dontmiss Ltd", "error": None}
+    assert response.json() == {"ok": True, "pixel_name": "Dontmiss BG", "error": None}
 
 
 @pytest.mark.integration

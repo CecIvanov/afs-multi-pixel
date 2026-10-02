@@ -205,7 +205,6 @@ export type MarketRecord = {
 export type PixelCheckRecord = {
   ok: boolean;
   pixel_name: string | null;
-  owner_name: string | null;
   error: string | null;
 };
 

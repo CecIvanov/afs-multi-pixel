@@ -4,6 +4,7 @@ Shopify and Meta are replaced by fakes at the MarketService seam."""
 
 from __future__ import annotations
 
+import urllib.parse
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -43,7 +44,7 @@ class FakeMeta:
     """Answers Check with Meta; records the token each check was made with."""
 
     def __init__(self, result: PixelCheck | None = None) -> None:
-        self.result = result or PixelCheck(ok=True, pixel_name="Dontmiss BG", owner_name="Dontmiss Ltd")
+        self.result = result or PixelCheck(ok=True, pixel_name="Dontmiss BG")
         self.calls: list[tuple[str, str]] = []
 
     def __call__(self, pixel_id: str, token: str) -> PixelCheck:
@@ -91,36 +92,39 @@ def test_parse_market_node_without_region_conditions_has_no_regions():
 
 
 # --- interpreting Check with Meta --------------------------------------------------
+# The bodies below are Meta's real answers to an empty POST /<pixel>/events (2026-10-02).
 @pytest.mark.unit
-def test_pixel_check_passes_when_meta_returns_the_pixel():
-    body = {"id": PIXEL, "name": "Dontmiss BG", "owner_business": {"id": "77", "name": "Dontmiss Ltd"},
-            "is_unavailable": False}
+def test_pixel_check_passes_when_meta_only_rejects_the_empty_data():
+    body = {"error": {"message": "(#100) param data must be non-empty.", "type": "OAuthException", "code": 100}}
 
-    assert interpret_pixel_check(PIXEL, 200, body) == PixelCheck(
-        ok=True, pixel_name="Dontmiss BG", owner_name="Dontmiss Ltd"
-    )
+    assert interpret_pixel_check(400, body) == PixelCheck(ok=True)
+
+
+@pytest.mark.unit
+def test_pixel_check_fails_for_a_pixel_the_token_cant_reach():
+    body = {"error": {"message": "Unsupported post request. Object with ID '1290457710338842' does not exist, "
+                      "cannot be loaded due to missing permissions, or does not support this operation.",
+                      "type": "GraphMethodException", "code": 100, "error_subcode": 33}}
+
+    check = interpret_pixel_check(400, body)
+
+    assert check.ok is False
+    assert "can't send to this pixel" in (check.error or "")
 
 
 @pytest.mark.unit
 def test_pixel_check_fails_with_metas_error_message():
-    body = {"error": {"message": "Error validating access token: Session has expired", "code": 190}}
+    body = {"error": {"message": "Invalid OAuth access token - Cannot parse access token", "code": 190}}
 
-    check = interpret_pixel_check(PIXEL, 400, body)
+    check = interpret_pixel_check(400, body)
 
     assert check.ok is False
-    assert "Session has expired" in (check.error or "")
+    assert "Cannot parse access token" in (check.error or "")
 
 
 @pytest.mark.unit
-def test_pixel_check_fails_for_an_unavailable_pixel():
-    body = {"id": PIXEL, "name": "Old pixel", "is_unavailable": True}
-
-    assert interpret_pixel_check(PIXEL, 200, body).ok is False
-
-
-@pytest.mark.unit
-def test_pixel_check_fails_when_meta_answers_for_another_id():
-    assert interpret_pixel_check(PIXEL, 200, {"id": "999", "name": "x"}).ok is False
+def test_pixel_check_fails_if_meta_ever_accepts_the_empty_post():
+    assert interpret_pixel_check(200, {"events_received": 0}).ok is False
 
 
 # --- syncing Markets ---------------------------------------------------------------
@@ -316,7 +320,7 @@ def test_check_uses_the_stored_token_when_none_is_given(db):
 
     check = service.check_pixel(tenant, 101, pixel_id=PIXEL, token=None)
 
-    assert check.ok and check.owner_name == "Dontmiss Ltd"
+    assert check.ok and check.pixel_name == "Dontmiss BG"
     assert meta.calls[-1] == (PIXEL, TOKEN)
 
 
@@ -399,18 +403,19 @@ def test_check_pixel_with_meta_sends_the_documented_request(monkeypatch):
 
     def handler(request: httpx.Request) -> httpx.Response:
         requests.append(request)
-        return httpx.Response(200, json={"id": PIXEL, "name": "Dontmiss BG", "owner_business": {"name": "Dontmiss Ltd"}})
+        return httpx.Response(400, json={"error": {"message": "(#100) param data must be non-empty.", "code": 100}})
 
     monkeypatch.setattr(meta_pixel_client, "_transport", httpx.MockTransport(handler))
 
     check = meta_pixel_client.check_pixel_with_meta(PIXEL, TOKEN)
 
-    assert check == PixelCheck(ok=True, pixel_name="Dontmiss BG", owner_name="Dontmiss Ltd")
+    assert check == PixelCheck(ok=True)
     (request,) = requests
-    assert request.method == "GET"
-    assert request.url.path.endswith(f"/{PIXEL}")
-    assert request.url.params["fields"] == "id,name,owner_business,is_unavailable"
-    assert request.url.params["access_token"] == TOKEN
+    assert request.method == "POST"
+    assert request.url.path.endswith(f"/{PIXEL}/events")
+    form = dict(urllib.parse.parse_qsl(request.content.decode()))
+    assert form == {"data": "[]", "access_token": TOKEN}
+    assert "access_token" not in request.url.params
 
 
 # --- when Markets are synced ------------------------------------------------------------

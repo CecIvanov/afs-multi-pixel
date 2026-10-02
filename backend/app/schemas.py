@@ -188,7 +188,6 @@ class PixelSaveIn(PixelCheckIn):
 class PixelCheckOut(BaseModel):
     ok: bool
     pixel_name: str | None = None
-    owner_name: str | None = None
     error: str | None = None
 
 

@@ -47,11 +47,10 @@ class ShopMarket:
 
 @dataclass(frozen=True)
 class PixelCheck:
-    """The outcome of Check with Meta (``GET /<pixel>`` with the token)."""
+    """The outcome of Check with Meta (an empty ``POST /<pixel>/events`` with the token)."""
 
     ok: bool
     pixel_name: str | None = None
-    owner_name: str | None = None
     error: str | None = None
 
 
@@ -73,19 +72,20 @@ def parse_market_node(node: dict[str, Any]) -> ShopMarket:
     )
 
 
-def interpret_pixel_check(pixel_id: str, status_code: int, body: dict[str, Any]) -> PixelCheck:
-    """Turn Meta's answer to ``GET /<pixel>?fields=id,name,owner_business,is_unavailable``
-    into a pass or a merchant-readable failure."""
+def interpret_pixel_check(status_code: int, body: dict[str, Any]) -> PixelCheck:
+    """Turn Meta's answer to an empty ``POST /<pixel>/events`` into a pass or a
+    merchant-readable failure. Meta only gets as far as rejecting the empty data
+    ("(#100) param data must be non-empty.") once the token can send to the pixel;
+    a pixel the token can't reach is subcode 33, a bad token is code 190."""
     error = body.get("error")
-    if status_code >= 400 or error:
-        message = (error or {}).get("message") if isinstance(error, dict) else None
-        return PixelCheck(ok=False, error=f"Meta refused the check: {message or f'HTTP {status_code}'}")
-    if str(body.get("id")) != pixel_id:
-        return PixelCheck(ok=False, error="Meta didn't return this pixel. Check the pixel ID.")
-    if body.get("is_unavailable"):
-        return PixelCheck(ok=False, error="Meta reports this pixel as unavailable.")
-    owner = body.get("owner_business") or {}
-    return PixelCheck(ok=True, pixel_name=body.get("name"), owner_name=owner.get("name"))
+    if not isinstance(error, dict):
+        return PixelCheck(ok=False, error=f"Meta gave an unexpected answer (HTTP {status_code}). Try again.")
+    message = str(error.get("message") or "")
+    if error.get("code") == 100 and not error.get("error_subcode") and "param data" in message:
+        return PixelCheck(ok=True)
+    if error.get("error_subcode") == 33:
+        return PixelCheck(ok=False, error="This token can't send to this pixel. Check the pixel ID, or generate the token from this pixel's settings.")
+    return PixelCheck(ok=False, error=f"Meta refused the check: {message or f'HTTP {status_code}'}")
 
 
 @dataclass(frozen=True)
