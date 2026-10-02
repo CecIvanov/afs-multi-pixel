@@ -7,10 +7,11 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.models import ServerEvent, ServerEventStatus, Tenant
+from app.services.server_event_sender import META_EVENT_MAX_AGE
 
 WINDOW = timedelta(hours=24)
 EVENT_LOG_LIMIT = 200
@@ -23,6 +24,10 @@ class MarketStats:
     purchases: int = 0
     series: list[int] = field(default_factory=lambda: [0] * 24)
     last_event_at: datetime | None = None
+    # Server Events on hold for a working token, of any age, and when the oldest
+    # passes Meta's 7-day limit and is dropped.
+    held: int = 0
+    held_until: datetime | None = None
 
 
 @dataclass
@@ -52,6 +57,15 @@ def market_stats(db: Session, tenant: Tenant, now: datetime | None = None) -> St
         m.series[hour] += 1
         if m.last_event_at is None or created_at > m.last_event_at:
             m.last_event_at = created_at
+    held = db.execute(
+        select(ServerEvent.shopify_market_id, func.count(), func.min(ServerEvent.created_at))
+        .where(ServerEvent.tenant_id == tenant.id, ServerEvent.status == ServerEventStatus.PAUSED)
+        .group_by(ServerEvent.shopify_market_id)
+    ).all()
+    for market_id, count, oldest in held:
+        m = markets.setdefault(market_id, MarketStats())
+        m.held = int(count)
+        m.held_until = oldest + META_EVENT_MAX_AGE
     return Stats(
         markets=markets,
         browser_24h=sum(m.browser for m in markets.values()),

@@ -293,6 +293,26 @@ def test_stats_count_browser_and_server_events_per_market(db):
     assert len(bg.series) == 24 and sum(bg.series) == 2
     assert bg.last_event_at is not None
     assert (stats.browser_24h, stats.server_24h) == (2, 1)
+    assert (bg.held, bg.held_until) == (0, None)
+
+
+@pytest.mark.integration
+def test_stats_count_held_events_of_any_age_and_when_the_oldest_is_dropped(db):
+    from app.services.event_stats import market_stats
+
+    tenant = _shop(db)
+    _receive(db, _relay(eventId="a"))
+    _receive(db, _relay(eventId="b"))
+    _sender(db, FakeMetaApi(MetaAnswer(status=400, body={"error": {"code": 190, "message": "expired"}}))).send_due()
+    three_days_ago = datetime.now(UTC) - timedelta(days=3)
+    oldest = _events(db)[0]
+    oldest.created_at = three_days_ago  # past the page's 24-hour window, still held
+    db.commit()
+
+    bg = market_stats(db, tenant).markets[101]
+
+    assert bg.held == 2
+    assert bg.held_until == three_days_ago + timedelta(days=7)
 
 
 @pytest.mark.integration

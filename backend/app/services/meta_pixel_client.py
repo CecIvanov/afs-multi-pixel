@@ -18,9 +18,10 @@ def check_pixel_with_meta(pixel_id: str, token: str) -> PixelCheck:
     try:
         with httpx.Client(transport=_transport, timeout=15.0) as client:
             # An Events Manager token can't read the pixel (GET /<pixel> is "(#100) Missing
-            # Permission"), but it can post events. An empty post records nothing and
-            # Meta checks the token and pixel before it rejects the empty data.
-            response = client.post(f"{GRAPH_URL}/{pixel_id}/events", data={"data": "[]", "access_token": token})
+            # Permission"), but it can post events. One empty event records nothing: Meta
+            # checks the token against the pixel, then refuses the event's missing fields.
+            # Don't post empty data instead: Meta refuses that before checking the token.
+            response = client.post(f"{GRAPH_URL}/{pixel_id}/events", data={"data": "[{}]", "access_token": token})
     except httpx.HTTPError as exc:
         return PixelCheck(ok=False, error=f"Couldn't reach Meta: {exc.__class__.__name__}. Try again.")
     try:

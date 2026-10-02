@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   addedAgo,
   canCheckWithMeta,
+  heldEventAlerts,
   isValidPixelId,
   lastEventLabel,
   marketLabels,
@@ -134,4 +135,27 @@ test("setupSteps: embed, pixels, consent, verified in Meta", () => {
     [["embed", true], ["pixels", true], ["consent", false], ["verified", false]],
   );
   assert.equal(setupSteps({ embedActive: null, markets: [], setup: {} })[0].done, false);
+});
+
+test("held-event banners: one per Market on hold, with the count and the drop time", () => {
+  const reason = "This token can't send to this pixel. Check the pixel ID, or generate the token from this pixel's settings.";
+  const greece = market({
+    shopify_market_id: 102,
+    name: "Greece",
+    pixel: pixel({ token_state: "rejected", token_error: reason }),
+    stats: { held: 3, held_until: "2026-10-09T10:29:33Z" },
+  });
+  const sending = market({ pixel: pixel(), stats: { held: 0, held_until: null } });
+
+  assert.deepEqual(heldEventAlerts([sending, greece], (iso) => `<${iso}>`), [
+    {
+      marketId: 102,
+      heading: "Greece: server events are on hold",
+      text: `${reason} 3 server events are waiting and will be sent once you save a working token. Events still waiting on <2026-10-09T10:29:33Z> will be dropped.`,
+    },
+  ]);
+  const quiet = market({ pixel: pixel({ token_state: "rejected", token_error: null }), stats: { held: 0, held_until: null } });
+  assert.equal(heldEventAlerts([quiet])[0].text, "Meta rejected the saved token. New server events will wait until you save a working token.");
+  const one = market({ pixel: pixel({ token_state: "rejected", token_error: "Expired." }), stats: { held: 1, held_until: null } });
+  assert.equal(heldEventAlerts([one])[0].text, "Expired. 1 server event is waiting and will be sent once you save a working token.");
 });

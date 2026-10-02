@@ -21,6 +21,9 @@ from app.logging_config import get_logger
 from app.models import Market, MarketPixel, Tenant, TokenState
 from app.services.server_event_sender import UNREACHABLE_PIXEL_MESSAGE, UNREACHABLE_PIXEL_SUBCODE
 from app.services.storefront_publisher import queue_publish
+
+# Meta's "Server Side Api Parameter Error": the event reached validation, so the token can send.
+MISSING_EVENT_FIELD_SUBCODE = 2804019
 from app.services.token_cipher import TokenCipher
 
 logger = get_logger().child({"component": "markets"})
@@ -74,15 +77,15 @@ def parse_market_node(node: dict[str, Any]) -> ShopMarket:
 
 
 def interpret_pixel_check(status_code: int, body: dict[str, Any]) -> PixelCheck:
-    """Turn Meta's answer to an empty ``POST /<pixel>/events`` into a pass or a
-    merchant-readable failure. Meta only gets as far as rejecting the empty data
-    ("(#100) param data must be non-empty.") once the token can send to the pixel;
+    """Turn Meta's answer to ``POST /<pixel>/events`` with one empty event into a pass
+    or a merchant-readable failure. Meta only gets as far as the event's missing fields
+    (subcode 2804019, "event_name is required") once the token can send to the pixel;
     a pixel the token can't reach is subcode 33, a bad token is code 190."""
     error = body.get("error")
     if not isinstance(error, dict):
         return PixelCheck(ok=False, error=f"Meta gave an unexpected answer (HTTP {status_code}). Try again.")
     message = str(error.get("message") or "")
-    if error.get("code") == 100 and not error.get("error_subcode") and "param data" in message:
+    if error.get("error_subcode") == MISSING_EVENT_FIELD_SUBCODE:
         return PixelCheck(ok=True)
     if error.get("error_subcode") == UNREACHABLE_PIXEL_SUBCODE:
         return PixelCheck(ok=False, error=UNREACHABLE_PIXEL_MESSAGE)

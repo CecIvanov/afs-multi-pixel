@@ -1,5 +1,5 @@
 import type { HeadersFunction, LoaderFunctionArgs } from "react-router";
-import { Link, Outlet, useLoaderData, useRouteError } from "react-router";
+import { Link, Outlet, useLoaderData, useLocation, useRouteError } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { AppProvider } from "@shopify/shopify-app-react-router/react";
 import { NavMenu } from "@shopify/app-bridge-react";
@@ -9,7 +9,8 @@ import { ensureBackendTenant } from "../tenant.server";
 import { checkPlanSubscription } from "../subscription.server";
 import { planHandleHint } from "../subscription.shared.mjs";
 import { billingMode } from "../billing.server";
-import { fetchBillingByShop } from "../backend.server";
+import { fetchBillingByShop, listMarkets } from "../backend.server";
+import { heldEventAlerts, marketTileState } from "../markets.shared.mjs";
 import { resolveSupportConfig } from "../support.server";
 import { ViberFab } from "../components/viber-fab";
 import { withRequestContext } from "../request-context.server";
@@ -41,7 +42,11 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     // The effective plan, and a downgrade waiting for the end of the cycle.
     const plan = billingEnabled ? await fetchBillingByShop(session.shop).catch(() => null) : null;
     const support = resolveSupportConfig();
+    // Markets whose server events are on hold, so every page can say so; the
+    // Markets page shows its own copy from fresher data.
+    const markets = await listMarkets(session.shop).then((r) => r.markets).catch(() => []);
     return {
+      heldMarkets: markets.filter((m) => marketTileState(m) === "token_problem"),
       apiKey: process.env.SHOPIFY_API_KEY || "",
       plan: plan?.subscribed
         ? {
@@ -58,7 +63,9 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 };
 
 export default function App() {
-  const { apiKey, viber, billingEnabled } = useLoaderData<typeof loader>();
+  const { apiKey, viber, billingEnabled, heldMarkets } = useLoaderData<typeof loader>();
+  const heldAlerts = heldEventAlerts(heldMarkets);
+  const onMarketsPage = useLocation().pathname.replace(/\/$/, "") === "/app";
   return (
     <AppProvider apiKey={apiKey}>
       <NavMenu>
@@ -67,6 +74,17 @@ export default function App() {
         <Link to="/app/settings">Settings</Link>
         <Link to="/app/help">Help</Link>
       </NavMenu>
+      {!onMarketsPage && heldAlerts.length ? (
+        <div style={{ padding: "16px 16px 0" }}>
+          <s-stack gap="small-200">
+            {heldAlerts.map((alert) => (
+              <s-banner key={alert.marketId} tone="critical" heading={alert.heading}>
+                {alert.text} <Link to={`/app?fix=${alert.marketId}`}>Update token</Link>
+              </s-banner>
+            ))}
+          </s-stack>
+        </div>
+      ) : null}
       <Outlet />
       {/* Configurable via app.config.json support.viber.enabled — renders only when on. */}
       <ViberFab enabled={viber.enabled} numberE164={viber.numberE164} label={viber.label} />

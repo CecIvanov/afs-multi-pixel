@@ -188,6 +188,8 @@ export type MarketStatsRecord = {
   purchases: number;
   series: number[];
   last_event_at: string | null;
+  held: number;
+  held_until: string | null;
 };
 
 export type MarketRecord = {

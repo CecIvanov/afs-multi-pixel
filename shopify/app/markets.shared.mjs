@@ -56,6 +56,31 @@ export function addedAgo(iso, now = new Date()) {
   return plural(Math.floor(hours / 24), "day");
 }
 
+// UTC so the server render and the browser agree (no hydration mismatch).
+const formatUtc = (iso) =>
+  `${new Date(iso).toLocaleString("en-GB", { timeZone: "UTC", dateStyle: "medium", timeStyle: "short" })} UTC`;
+
+/** One banner per Market whose server events are on hold for a working token:
+ * why, how many are waiting, and when the oldest is dropped (Meta's 7 days).
+ * @returns {{ marketId: number, heading: string, text: string }[]} */
+export function heldEventAlerts(markets, formatDate = formatUtc) {
+  return markets
+    .filter((m) => marketTileState(m) === "token_problem")
+    .map((m) => {
+      const held = m.stats?.held ?? 0;
+      const reason = m.pixel?.token_error || (m.pixel?.has_token ? "Meta rejected the saved token." : "No token is saved.");
+      const waiting = held
+        ? `${held} server ${held === 1 ? "event is" : "events are"} waiting and will be sent once you save a working token.` +
+          (m.stats?.held_until ? ` Events still waiting on ${formatDate(m.stats.held_until)} will be dropped.` : "")
+        : "New server events will wait until you save a working token.";
+      return {
+        marketId: m.shopify_market_id,
+        heading: `${m.name}: server events are on hold`,
+        text: `${reason} ${waiting}`,
+      };
+    });
+}
+
 /** A blank token keeps the saved one, unless there is none or Meta rejected it. */
 export function tokenRequired(market) {
   return !market.pixel || !market.pixel.has_token || market.pixel.token_state !== "ok";

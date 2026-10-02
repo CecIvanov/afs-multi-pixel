@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { ActionFunctionArgs, LoaderFunctionArgs, ShouldRevalidateFunction } from "react-router";
-import { Link, useFetcher, useLoaderData, useRouteLoaderData } from "react-router";
+import { Link, useFetcher, useLoaderData, useRouteLoaderData, useSearchParams } from "react-router";
 import { authenticate } from "../shopify.server";
 import {
   checkMarketPixel,
@@ -18,6 +18,7 @@ import { logError } from "../logger.server";
 import {
   addedAgo,
   canCheckWithMeta,
+  heldEventAlerts,
   isValidPixelId,
   lastEventLabel,
   marketLabels,
@@ -141,6 +142,19 @@ export default function Markets() {
   const editing = markets.find((m) => m.shopify_market_id === editor.marketId) ?? null;
   const openEditor = (marketId: number) => setEditor((e) => ({ marketId, opened: e.opened + 1 }));
   const [logMarket, setLogMarket] = useState<number | null>(null);
+  // The held-events banner on the other pages links here with ?fix=<Market ID>.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const fixMarket = Number(searchParams.get("fix")) || null;
+  useEffect(() => {
+    if (!fixMarket || !markets.some((m) => m.shopify_market_id === fixMarket)) return;
+    openEditor(fixMarket);
+    modalRef.current?.showOverlay();
+    setSearchParams((params) => {
+      params.delete("fix");
+      return params;
+    }, { replace: true });
+  }, [fixMarket, markets, setSearchParams]);
+  const alerts = heldEventAlerts(markets);
   const summary = summarizeMarkets(markets);
   const embedActive = useEmbedActive();
   const steps = setupSteps({ embedActive, markets, setup });
@@ -173,6 +187,20 @@ export default function Markets() {
             Showing the Markets as they were last fetched. Reload the page to try again.
           </s-banner>
         ) : null}
+
+        {alerts.map((alert) => (
+          <s-banner key={alert.marketId} tone="critical" heading={alert.heading}>
+            {alert.text}
+            <s-button
+              slot="secondary-actions"
+              commandFor={EDITOR_ID}
+              command="--show"
+              onClick={() => openEditor(alert.marketId)}
+            >
+              Update token
+            </s-button>
+          </s-banner>
+        ))}
 
         {steps.some((s) => !s.done) ? (
           <div className={styles.strip}>

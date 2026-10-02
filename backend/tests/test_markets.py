@@ -92,17 +92,20 @@ def test_parse_market_node_without_region_conditions_has_no_regions():
 
 
 # --- interpreting Check with Meta --------------------------------------------------
-# The bodies below are Meta's real answers to an empty POST /<pixel>/events (2026-10-02).
+# The bodies below are Meta's real answers to POST /<pixel>/events with data=[{}] (2026-10-02).
 @pytest.mark.unit
-def test_pixel_check_passes_when_meta_only_rejects_the_empty_data():
-    body = {"error": {"message": "(#100) param data must be non-empty.", "type": "OAuthException", "code": 100}}
+def test_pixel_check_passes_when_meta_only_refuses_the_empty_events_fields():
+    body = {"error": {"message": "Invalid parameter", "type": "OAuthException", "code": 100, "error_subcode": 2804019,
+                      "error_user_title": "Server Side Api Parameter Error",
+                      "error_user_msg": "The parameter $['data'][0]['event_name'] is required."}}
 
     assert interpret_pixel_check(400, body) == PixelCheck(ok=True)
 
 
 @pytest.mark.unit
 def test_pixel_check_fails_for_a_pixel_the_token_cant_reach():
-    body = {"error": {"message": "Unsupported post request. Object with ID '1290457710338842' does not exist, "
+    # The Bulgaria pixel's token posting to the Greece pixel.
+    body = {"error": {"message": "Unsupported post request. Object with ID '1134226218952173' does not exist, "
                       "cannot be loaded due to missing permissions, or does not support this operation.",
                       "type": "GraphMethodException", "code": 100, "error_subcode": 33}}
 
@@ -123,8 +126,17 @@ def test_pixel_check_fails_with_metas_error_message():
 
 
 @pytest.mark.unit
-def test_pixel_check_fails_if_meta_ever_accepts_the_empty_post():
+def test_pixel_check_fails_if_meta_ever_accepts_the_empty_event():
     assert interpret_pixel_check(200, {"events_received": 0}).ok is False
+
+
+@pytest.mark.unit
+def test_refusing_empty_data_proves_nothing_about_the_token():
+    # Meta gives this answer to data=[] before it checks the token, even for a token
+    # that can't reach the pixel; passing on it let a wrong Greece token be saved.
+    body = {"error": {"message": "(#100) param data must be non-empty.", "type": "OAuthException", "code": 100}}
+
+    assert interpret_pixel_check(400, body).ok is False
 
 
 # --- syncing Markets ---------------------------------------------------------------
@@ -403,7 +415,7 @@ def test_check_pixel_with_meta_sends_the_documented_request(monkeypatch):
 
     def handler(request: httpx.Request) -> httpx.Response:
         requests.append(request)
-        return httpx.Response(400, json={"error": {"message": "(#100) param data must be non-empty.", "code": 100}})
+        return httpx.Response(400, json={"error": {"message": "Invalid parameter", "code": 100, "error_subcode": 2804019}})
 
     monkeypatch.setattr(meta_pixel_client, "_transport", httpx.MockTransport(handler))
 
@@ -414,7 +426,7 @@ def test_check_pixel_with_meta_sends_the_documented_request(monkeypatch):
     assert request.method == "POST"
     assert request.url.path.endswith(f"/{PIXEL}/events")
     form = dict(urllib.parse.parse_qsl(request.content.decode()))
-    assert form == {"data": "[]", "access_token": TOKEN}
+    assert form == {"data": "[{}]", "access_token": TOKEN}
     assert "access_token" not in request.url.params
 
 

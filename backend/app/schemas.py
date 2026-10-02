@@ -138,6 +138,8 @@ class MarketStatsOut(BaseModel):
     purchases: int = 0
     series: list[int] = Field(default_factory=lambda: [0] * 24)
     last_event_at: datetime | None = None
+    held: int = 0
+    held_until: datetime | None = None
 
 
 class MarketOut(BaseModel):
