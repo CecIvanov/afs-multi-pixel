@@ -85,7 +85,10 @@ Same with `production` (database and role `afsmultipixel`; UAT's are
 `afsmultipixel_uat`). If `allow-docker-access.sh` reports that Postgres doesn't
 listen on the Docker bridge, set `listen_addresses = 'localhost,172.17.0.1'` in
 `postgresql.conf` and restart Postgres; keep 5432 closed in the firewall.
-Caddy proxies the public URL to `127.0.0.1:<UI_PORT>` (3010 UAT, 3020 production).
+Both stacks run on VPS Black, whose Caddy (`~/Projects/Caddy-black`, host
+networking) proxies each public URL to `127.0.0.1:<UI_PORT>`: 3110 UAT, 3120
+production (Blacklist COD owns 3010/3020 there). Paste
+`deploy/caddy/Caddyfile.snippet` into Caddy-black's Caddyfile and reload it.
 Nightly backups: `scripts/db/backup.sh <stack>` (cron line in the script).
 
 ## 6. Verify the install round-trip

@@ -1,0 +1,63 @@
+# AFS Multi Pixel — site blocks for the Caddy on VPS Black (~/Projects/Caddy-black).
+#
+# Paste both blocks into Caddy-black's Caddyfile (that project owns the proxy: edit,
+# commit, deploy, reload). That Caddy runs with host networking, so it reaches each
+# stack's UI container on the host loopback port it publishes (UI_PORT in .env.<stack>):
+#     UAT         https://multi-pixel-uat.adfeedstudio.com  ->  127.0.0.1:3110  (afsmultipixel-ui-uat)
+#     Production  https://multi-pixel-prd.adfeedstudio.com  ->  127.0.0.1:3120  (afsmultipixel-ui-production)
+# Ports 3010/3020 on that VPS belong to Blacklist COD; keep these in sync with UI_PORT.
+#
+# One UI container serves everything public, so no path routing is needed here:
+#   /app, /auth/*          the embedded admin and Shopify OAuth
+#   /webhooks/*            Shopify webhooks (HMAC-checked by the app, then stored)
+#   /api/events            Relays from the storefront and checkout (text/plain, no CORS)
+#   /legal/privacy.html    the privacy policy
+# The Python backend (API_PORT) and worker metrics stay on 127.0.0.1 only.
+#
+# The app reads the shopper's IP from the LAST X-Forwarded-For hop
+# (shopify/app/relay-intake.shared.mjs). Caddy replaces X-Forwarded-For with the
+# real client address for untrusted clients, so don't configure trusted_proxies for
+# these hosts and don't put another proxy in front without updating that logic.
+#
+# PREREQUISITES
+#   1. DNS A records -> VPS Black's public IP:
+#        multi-pixel-uat.adfeedstudio.com   multi-pixel-prd.adfeedstudio.com
+#   2. The stacks are up on that host:  ./scripts/start.sh uat   /   ./scripts/start.sh production
+#   3. SHOPIFY_APP_URL in .env.uat / .env.production equals the https domain below
+#      (it also builds the storefront's Relay endpoint <URL>/api/events), and the
+#      application_url / redirect_urls in shopify.app.<stack>.toml use the same host.
+#
+# RELOAD after editing (no downtime, no container recreate):
+#   docker exec caddy-black caddy reload --config /etc/caddy/Caddyfile
+
+# ------------------------------------------------------- AFS Multi Pixel — UAT
+multi-pixel-uat.adfeedstudio.com {
+	encode zstd gzip
+
+	request_body {
+		max_size 10MB
+	}
+
+	reverse_proxy 127.0.0.1:3110 {
+		header_up Host {host}
+		header_up X-Forwarded-Host {host}
+		header_up X-Forwarded-Proto {scheme}
+		header_up X-Real-IP {remote_host}
+	}
+}
+
+# ------------------------------------------------ AFS Multi Pixel — PRODUCTION
+multi-pixel-prd.adfeedstudio.com {
+	encode zstd gzip
+
+	request_body {
+		max_size 10MB
+	}
+
+	reverse_proxy 127.0.0.1:3120 {
+		header_up Host {host}
+		header_up X-Forwarded-Host {host}
+		header_up X-Forwarded-Proto {scheme}
+		header_up X-Real-IP {remote_host}
+	}
+}
