@@ -69,6 +69,10 @@ every shop counts as subscribed and the admin has no Plan page.
 
 ## 7a. Deploy UAT / production on the VPS
 
+Step-by-step for UAT (secrets, database, Docker access, Caddy, Shopify deploy,
+install, store setup): **[docs/deploy-uat.md](deploy-uat.md)**. Production is the
+same with `production` (plus the Partner API token for billing).
+
 UAT and production use the **VPS's own Postgres** (no Postgres container); each
 stack runs its own Redis container. The containers reach Postgres at
 `host.docker.internal:5432` (`DATABASE_HOST` / `DATABASE_PORT` in `.env.<stack>`),

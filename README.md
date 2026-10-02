@@ -181,7 +181,7 @@ $EDITOR .credentials.dev        # set DATABASE_PASSWORD, Shopify keys, INTERNAL_
 #      UI      http://127.0.0.1:3000
 #      API     http://127.0.0.1:8000/api/v1/health
 #      Docs    http://127.0.0.1:8000/docs
-#    Stop with ./scripts/stop.sh dev  (add --volumes to wipe the DB).
+#    Stop with ./scripts/stop-dev.sh  (add --volumes to wipe the DB).
 
 # Alternatively, provision only the database against an existing Postgres:
 #   ./scripts/db/setup.sh dev
@@ -298,7 +298,7 @@ ShopifyAppTemplate/
 │  ├─ logger/ (TS) · app_logger/ (Py)   # byte-identical JSON shape
 │  └─ app_metrics/ (Py)                 # Prometheus, HTTP + worker
 ├─ docker-compose.yml (+ .dev / .prod)  # api · worker · beat · ui · pg · redis  [present]
-├─ scripts/  start-{dev,uat,production}.sh · stop.sh · logs.sh [env] · init-template.mjs · lib/{compose,config,credentials}.sh  [present]
+├─ scripts/  {start,stop,logs}-{dev,uat,production}.sh · init-template.mjs · lib/{stack,compose,config,credentials}.sh  [present]
 ├─ docs/  SETUP.md · SEAMS.md                                      [next phase]
 └─ README.md                  # this file                          [present]
 ```

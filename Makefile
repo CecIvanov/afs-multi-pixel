@@ -21,10 +21,10 @@ production: ## Bring up the PRODUCTION stack (separate Shopify app + db + backen
 	./scripts/start-production.sh
 
 stop: ## Stop a stack (make stop ENV=uat)
-	./scripts/stop.sh $(ENV)
+	./scripts/stop-$(ENV).sh
 
 logs: ## Tail a stack's logs (make logs ENV=uat SVC=api)
-	./scripts/logs.sh $(ENV) $(SVC)
+	./scripts/logs-$(ENV).sh $(SVC)
 
 db-setup: ## Provision + migrate + seed a database (make db-setup ENV=uat)
 	./scripts/db/setup.sh $(ENV)

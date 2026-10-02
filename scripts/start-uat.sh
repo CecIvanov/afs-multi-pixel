@@ -4,6 +4,6 @@
 # Settings: .env.uat   Secrets: .credentials.uat
 set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-# shellcheck source=lib/start-stack.sh
-source "${ROOT_DIR}/scripts/lib/start-stack.sh"
+# shellcheck source=lib/stack.sh
+source "${ROOT_DIR}/scripts/lib/stack.sh"
 start_stack uat
