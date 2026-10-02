@@ -1,5 +1,4 @@
-import { redirect, type LoaderFunctionArgs, Form, useLoaderData } from "react-router";
-import { login } from "../shopify.server";
+import { redirect, type LoaderFunctionArgs } from "react-router";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const url = new URL(request.url);
@@ -7,24 +6,20 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   if (url.searchParams.get("shop")) {
     throw redirect(`/app?${url.searchParams.toString()}`);
   }
-  return { showForm: Boolean(login) };
+  return null;
 };
 
+// The public landing page. Installation starts only from Shopify (App Store 2.3.1):
+// no shop-domain form here.
 export default function Index() {
-  const { showForm } = useLoaderData<typeof loader>();
   return (
-    <main style={{ fontFamily: "Inter, system-ui, sans-serif", maxWidth: 480, margin: "80px auto", padding: 24 }}>
-      <h1>Shopify App</h1>
-      <p>A template app. Install it on a store to get started.</p>
-      {showForm && (
-        <Form method="post" action="/auth/login">
-          <label style={{ display: "block", marginBottom: 8 }}>
-            Shop domain
-            <input type="text" name="shop" placeholder="my-shop.myshopify.com" style={{ display: "block", width: "100%", padding: 8 }} />
-          </label>
-          <button type="submit">Log in</button>
-        </Form>
-      )}
+    <main style={{ fontFamily: "Inter, system-ui, sans-serif", maxWidth: 560, margin: "80px auto", padding: 24 }}>
+      <h1>AFS Multi Pixel</h1>
+      <p>A separate Meta pixel for every Shopify Market, with browser and server events.</p>
+      <p>Install AFS Multi Pixel from the Shopify App Store, then open it from your Shopify admin.</p>
+      <p>
+        <a href="/privacy">Privacy policy</a> · <a href="/terms">Terms of service</a>
+      </p>
     </main>
   );
 }
