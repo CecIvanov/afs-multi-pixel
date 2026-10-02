@@ -32,20 +32,25 @@ For each Market, browse its domain with marketing consent given:
   - Purchase
 - [ ] Purchase carries event ID `purchase-<orderId>`. The Server Purchase shows customer information parameters (email, phone, name, address) as matched.
 - [ ] `content_ids` are product IDs with `content_type: product_group`. AddToCart's value is the unit price.
-- [ ] The Market's tile shows the counts and the chart. The event log lists the events with Meta's answer.
+- [ ] The Market's tile shows the counts and the chart. Its Market page (View) shows the totals, events by type and the chart for 24 hours, 7 days and 30 days, and the Events table lists the events with Meta's answer. The event and status chips, the search (event ID or order number) and Previous / Next work. Refresh reloads the figures without a page reload.
 
 ## 3. Consent off
 
 - [ ] With marketing (or sale of data) declined in the store's cookie banner, there's no `fbevents.js` and no request to facebook.com or `/api/events`, on the storefront and at checkout.
-- [ ] A purchase without consent creates no Server Purchase. The event log shows nothing for it.
+- [ ] A purchase without consent creates no Server Purchase. The Market page's Events table shows nothing for it.
 
 ## 4. Token rejection, pause and resume
 
 - [ ] Replace one Market's token in Meta (revoke it) and browse that Market:
   - The tile turns **Token problem** with Meta's message.
-  - Server Events show as `paused` in the event log.
+  - Server Events show as **Held** on the Market page.
   - Browser Events still reach the pixel.
-- [ ] Paste a new token. The paused events (under 7 days old) are sent, and the tile turns **Sending**.
+- [ ] Paste a new token. The held events (under 7 days old) are sent, and the tile turns **Sending**.
+
+## 4a. Deactivate and reactivate
+
+- [ ] On a Market page, choose **Deactivate**. The tile and page show **Deactivated**. After the storefront mapping republishes, that Market's domain sends no `/tr` request and no `/api/events` relay. Other Markets keep sending.
+- [ ] Choose **Reactivate**. Events flow again; Server Events that were queued when you deactivated are sent.
 - [ ] Block Meta (for example, a bad network on the VPS for a few minutes). Events retry on the 1 min / 5 min / … backoff and are sent once it's back. Nothing is lost.
 
 ## 5. Markets lifecycle

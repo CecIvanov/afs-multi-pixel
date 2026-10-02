@@ -424,6 +424,13 @@ class MarketPixel(Base):
     )
     # Meta's answer when it rejected the token (shown on the tile); cleared on replace.
     token_error: Mapped[str | None] = mapped_column(Text)
+    # Deactivated: kept with its ID and token, but left out of the storefront
+    # mapping, so neither Browser nor Server Events are sent.
+    active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False, server_default=text("true"))
+    # The last Check with Meta of the saved pair, for the Market page.
+    last_check_ok: Mapped[bool | None] = mapped_column(Boolean)
+    last_check_error: Mapped[str | None] = mapped_column(Text)
+    last_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
@@ -480,6 +487,8 @@ class ServerEvent(Base):
     attempt_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     next_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     meta_response: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    # A Purchase's order number as the merchant sees it (1001 for #1001), from orders/create.
+    order_number: Mapped[str | None] = mapped_column(String(32))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()

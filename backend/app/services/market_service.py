@@ -102,6 +102,12 @@ class PixelView:
     token_state: str
     has_token: bool
     token_error: str | None = None
+    active: bool = True
+    # The token's last four characters, so the merchant can tell which one is saved.
+    token_hint: str | None = None
+    last_check_ok: bool | None = None
+    last_check_error: str | None = None
+    last_checked_at: datetime | None = None
 
 
 @dataclass(frozen=True)
@@ -215,24 +221,71 @@ class MarketService:
         if not check.ok:
             raise PixelValidationError(check.error or "Meta didn't accept this pixel ID and token.")
 
-        row = existing or MarketPixel(tenant_id=tenant.id, shopify_market_id=market_id)
+        row = existing or MarketPixel(tenant_id=tenant.id, shopify_market_id=market_id, active=True)
         row.pixel_id = pixel_id
         row.pixel_name = check.pixel_name
         row.test_event_code = (test_event_code or "").strip() or None
         if (token or "").strip():
             row.capi_token_encrypted = self._cipher_or_default().encrypt(token_to_use)
-        row.token_state = TokenState.OK
-        row.token_error = None
+        _record_check(row, check)
         self.db.add(row)
         # The pair just passed Check with Meta: whatever paused the Market's
         # Server Events is fixed, so the waiting ones go out (spec §3.2).
-        from app.services.server_event_sender import resume_paused
-
-        resume_paused(self.db, tenant.id, market_id)
+        self._clear_token_problem(tenant, row)
         self.db.commit()
         logger.info("markets.pixel_saved", {"tenantId": str(tenant.id), "marketId": market_id, "pixelId": pixel_id})
         queue_publish(self.db, tenant.id)
         return self._view(market, row)
+
+    def recheck(self, tenant: Tenant, market_id: int) -> PixelCheck:
+        """Check with Meta for the saved pair, and keep the answer for the Market page.
+        A pass also clears a rejected token: Meta can take a few minutes to allow a
+        newly connected dataset, so the same token may work on a later try."""
+        pixel = self._saved_pixel(tenant, market_id)
+        if not pixel.capi_token_encrypted:
+            raise PixelValidationError("No token is saved. Paste the Conversions API token.")
+        token = self._cipher_or_default().decrypt(pixel.capi_token_encrypted)
+        check = self._checker()(pixel.pixel_id, token)
+        _record_check(pixel, check)
+        if check.ok:
+            self._clear_token_problem(tenant, pixel)
+        self.db.commit()
+        logger.info("markets.pixel_rechecked", {"tenantId": str(tenant.id), "marketId": market_id, "ok": check.ok})
+        return check
+
+    def deactivate(self, tenant: Tenant, market_id: int) -> MarketView:
+        """Stop the Market's Browser and Server Events, keeping the pixel ID and token.
+        Events still queued are held, under the same 7-day rule as a rejected token."""
+        from app.services.server_event_sender import DEACTIVATED_DETAIL, hold_queued
+
+        market = self._market(tenant, market_id)
+        pixel = self._saved_pixel(tenant, market_id)
+        pixel.active = False
+        hold_queued(self.db, tenant.id, market_id, DEACTIVATED_DETAIL)
+        self.db.commit()
+        logger.info("markets.pixel_deactivated", {"tenantId": str(tenant.id), "marketId": market_id})
+        queue_publish(self.db, tenant.id)
+        return self._view(market, pixel)
+
+    def reactivate(self, tenant: Tenant, market_id: int) -> MarketView:
+        """Send events again. The saved pair is checked with Meta first: held events
+        go out only if the token works; otherwise the Market shows a token problem."""
+        market = self._market(tenant, market_id)
+        pixel = self._saved_pixel(tenant, market_id)
+        pixel.active = True
+        if pixel.capi_token_encrypted:
+            token = self._cipher_or_default().decrypt(pixel.capi_token_encrypted)
+            check = self._checker()(pixel.pixel_id, token)
+            _record_check(pixel, check)
+            if check.ok:
+                self._clear_token_problem(tenant, pixel)
+            else:
+                pixel.token_state = TokenState.REJECTED
+                pixel.token_error = check.error
+        self.db.commit()
+        logger.info("markets.pixel_reactivated", {"tenantId": str(tenant.id), "marketId": market_id})
+        queue_publish(self.db, tenant.id)
+        return self._view(market, pixel)
 
     def remove_pixel(self, tenant: Tenant, market_id: int) -> MarketView:
         market = self._market(tenant, market_id)
@@ -245,6 +298,28 @@ class MarketService:
         return self._view(market, None)
 
     # --- internals ------------------------------------------------------------------
+    def _clear_token_problem(self, tenant: Tenant, pixel: MarketPixel) -> None:
+        from app.services.server_event_sender import resume_paused
+
+        pixel.token_state = TokenState.OK
+        pixel.token_error = None
+        if pixel.active:
+            resume_paused(self.db, tenant.id, pixel.shopify_market_id)
+
+    def _saved_pixel(self, tenant: Tenant, market_id: int) -> MarketPixel:
+        pixel = self._pixel(tenant, market_id)
+        if pixel is None:
+            raise LookupError(f"Market {market_id} has no pixel")
+        return pixel
+
+    def _token_hint(self, pixel: MarketPixel) -> str | None:
+        if not pixel.capi_token_encrypted:
+            return None
+        try:
+            return self._cipher_or_default().decrypt(pixel.capi_token_encrypted)[-4:]
+        except Exception:  # noqa: BLE001 — an unreadable token shows no hint; sending reports it
+            return None
+
     def _token_to_use(self, existing: MarketPixel | None, token: str | None) -> str:
         token = (token or "").strip()
         if token:
@@ -279,6 +354,11 @@ class MarketService:
                 token_state=pixel.token_state.value,
                 has_token=bool(pixel.capi_token_encrypted),
                 token_error=pixel.token_error,
+                active=pixel.active,
+                token_hint=self._token_hint(pixel),
+                last_check_ok=pixel.last_check_ok,
+                last_check_error=pixel.last_check_error,
+                last_checked_at=pixel.last_checked_at,
             ),
         )
 
@@ -321,6 +401,12 @@ class MarketService:
 
             self._cipher = token_cipher_from_settings()
         return self._cipher
+
+
+def _record_check(pixel: MarketPixel, check: PixelCheck) -> None:
+    pixel.last_check_ok = check.ok
+    pixel.last_check_error = None if check.ok else check.error
+    pixel.last_checked_at = datetime.now(UTC)
 
 
 def _valid_pixel_id(pixel_id: str) -> str:

@@ -132,6 +132,7 @@ class PurchaseJoin:
                 "user_data": hash_order_customer(order),
                 "custom_data": order_custom_data(order),
                 "event_time": _order_event_time(order),
+                "order_number": str(order.get("order_number") or "")[:32] or None,
             },
         )
         self.db.commit()
@@ -163,6 +164,7 @@ class PurchaseJoin:
             row.status = ServerEventStatus.RECEIVED
             row.meta_response = None
             row.source = ServerEventSource.WEBHOOK
+            row.order_number = order_half.get("order_number")
         # The pending row has done its job; keep no customer data around.
         self.db.execute(delete(PendingPurchase).where(PendingPurchase.id == pending.id))
         self.db.commit()

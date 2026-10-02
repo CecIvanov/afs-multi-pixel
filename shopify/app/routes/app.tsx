@@ -65,7 +65,9 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 export default function App() {
   const { apiKey, viber, billingEnabled, heldMarkets } = useLoaderData<typeof loader>();
   const heldAlerts = heldEventAlerts(heldMarkets);
-  const onMarketsPage = useLocation().pathname.replace(/\/$/, "") === "/app";
+  // The overview and the Market pages show their own copy of the banner.
+  const path = useLocation().pathname.replace(/\/$/, "");
+  const onMarketsPage = path === "/app" || path.startsWith("/app/markets/");
   return (
     <AppProvider apiKey={apiKey}>
       <NavMenu>
@@ -79,7 +81,7 @@ export default function App() {
           <s-stack gap="small-200">
             {heldAlerts.map((alert) => (
               <s-banner key={alert.marketId} tone="critical" heading={alert.heading}>
-                {alert.text} <Link to={`/app?fix=${alert.marketId}`}>Update token</Link>
+                {alert.text} <Link to={`/app/markets/${alert.marketId}`}>View {alert.name}</Link>
               </s-banner>
             ))}
           </s-stack>

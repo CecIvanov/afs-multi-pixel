@@ -316,16 +316,15 @@ def test_stats_count_held_events_of_any_age_and_when_the_oldest_is_dropped(db):
 
 
 @pytest.mark.integration
-def test_the_event_log_lists_recent_events_newest_first(db):
-    from app.services.event_stats import event_log
+def test_the_event_table_lists_one_markets_events_newest_first(db):
+    from app.services.event_stats import event_page
 
     tenant = _shop(db)
     _receive(db, _relay(eventId="1"))
-    _receive(db, _relay(eventId="2", marketId="102"))
+    _receive(db, _relay(eventId="2", marketId="102"))  # refused: Greece has no pixel
 
-    rows = event_log(db, tenant)
-    assert [(r.event_id, r.status, r.sent_as) for r in rows] == [("2", "rejected", "Relay"), ("1", "received", "Server")]
-    assert [r.event_id for r in event_log(db, tenant, market_id=101)] == ["1"]
+    rows = event_page(db, tenant, 102).rows + event_page(db, tenant, 101).rows
+    assert [(r.event_id, r.status, r.sent_as) for r in rows] == [("2", "rejected", "Relay"), ("1", "waiting", "Server")]
 
 
 @pytest.mark.integration

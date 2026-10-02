@@ -15,6 +15,19 @@ import {
   sparkBars,
   summarizeMarkets,
   tokenRequired,
+  chartBars,
+  deactivatedNote,
+  chartAxis,
+  lastCheckLabel,
+  notSentDetail,
+  pageLabel,
+  parseRange,
+  sharePct,
+  statusChips,
+  statusLabel,
+  tokenWarning,
+  typeRows,
+  updatedAgo,
 } from "./markets.shared.mjs";
 
 const pixel = (over = {}) => ({
@@ -55,6 +68,12 @@ test("tile state: sending, token problem, new, or plain unmapped", () => {
   assert.equal(marketTileState(market({ pixel: pixel({ has_token: false }) })), "token_problem");
   assert.equal(marketTileState(market({ is_new: true })), "new");
   assert.equal(marketTileState(market()), "unmapped");
+});
+
+test("a deactivated pixel is its own state, whatever its token", () => {
+  assert.equal(marketTileState(market({ pixel: pixel({ active: false }) })), "deactivated");
+  assert.equal(marketTileState(market({ pixel: pixel({ active: false, token_state: "rejected" }) })), "deactivated");
+  assert.deepEqual(heldEventAlerts([market({ pixel: pixel({ active: false, token_state: "rejected" }) })]), []);
 });
 
 test("B2B and Draft Markets are labelled", () => {
@@ -150,6 +169,7 @@ test("held-event banners: one per Market on hold, with the count and the drop ti
   assert.deepEqual(heldEventAlerts([sending, greece], (iso) => `<${iso}>`), [
     {
       marketId: 102,
+      name: "Greece",
       heading: "Greece: server events are on hold",
       text: `${reason} 3 server events are waiting and will be sent once you save a working token. Events still waiting on <2026-10-09T10:29:33Z> will be dropped.`,
     },
@@ -158,4 +178,129 @@ test("held-event banners: one per Market on hold, with the count and the drop ti
   assert.equal(heldEventAlerts([quiet])[0].text, "Meta rejected the saved token. New server events will wait until you save a working token.");
   const one = market({ pixel: pixel({ token_state: "rejected", token_error: "Expired." }), stats: { held: 1, held_until: null } });
   assert.equal(heldEventAlerts([one])[0].text, "Expired. 1 server event is waiting and will be sent once you save a working token.");
+});
+
+// --- the Market page (#15) ---------------------------------------------------------------
+const WHOLE_TOKEN = `EAA${"x".repeat(197)}`;
+
+test("tokenWarning flags a pasted token that doesn't look whole", () => {
+  assert.equal(tokenWarning(""), null);
+  assert.equal(tokenWarning(WHOLE_TOKEN), null);
+  assert.equal(tokenWarning(`  ${WHOLE_TOKEN}  `), null);
+  assert.match(tokenWarning(WHOLE_TOKEN.slice(0, 120)), /incomplete/);
+  assert.match(tokenWarning(`EAB${"x".repeat(197)}`), /starts with EAA/);
+  assert.match(tokenWarning(`EAA${"x".repeat(100)} ${"x".repeat(100)}`), /spaces or line breaks/);
+});
+
+test("updatedAgo says how fresh the figures are", () => {
+  const now = new Date("2026-10-02T12:00:00Z");
+  assert.equal(updatedAgo("2026-10-02T11:59:40Z", now), "Updated just now");
+  assert.equal(updatedAgo("2026-10-02T11:57:00Z", now), "Updated 3 min ago");
+  assert.equal(updatedAgo("2026-10-02T09:00:00Z", now), "Updated 3 h ago");
+});
+
+test("statuses read as words, and paused is Held", () => {
+  assert.equal(statusLabel("held"), "Held");
+  assert.equal(statusLabel("sent"), "Sent");
+  assert.equal(statusLabel("waiting"), "Waiting");
+  assert.equal(statusLabel("rejected"), "Rejected");
+  assert.equal(statusLabel("whatever"), "whatever");
+});
+
+test("parseRange accepts 24h, 7d and 30d and defaults to 24h", () => {
+  assert.equal(parseRange("7d"), "7d");
+  assert.equal(parseRange("30d"), "30d");
+  assert.equal(parseRange("1y"), "24h");
+  assert.equal(parseRange(null), "24h");
+});
+
+test("sharePct has one decimal, and a dash when there is nothing to share", () => {
+  assert.equal(sharePct(1, 3), "33.3%");
+  assert.equal(sharePct(2, 2), "100.0%");
+  assert.equal(sharePct(0, 0), "—");
+});
+
+test("typeRows: share of all events, share that reached Meta, low under 90%", () => {
+  const rows = typeRows({
+    browser: 20,
+    types: [
+      { event_name: "PageView", count: 10, sent: 10 },
+      { event_name: "AddToCart", count: 10, sent: 8 },
+    ],
+  });
+  assert.deepEqual(
+    rows.map((r) => [r.event_name, r.share, r.reached, r.low, r.bar]),
+    [
+      ["PageView", "50.0%", "100.0%", false, 100],
+      ["AddToCart", "50.0%", "80.0%", true, 100],
+    ],
+  );
+});
+
+test("notSentDetail splits held from waiting and refused", () => {
+  assert.equal(notSentDetail({ not_sent: 5, held: 3, rejected: 1 }), "3 held · 2 waiting or failed · 1 refused before Meta");
+  assert.equal(notSentDetail({ not_sent: 0, held: 0, rejected: 0 }), "Nothing waiting");
+});
+
+test("chartBars stacks reached, held and other per bucket against the tallest", () => {
+  const bars = chartBars([
+    { sent: 3, held: 1, not_sent: 0 },
+    { sent: 1, held: 0, not_sent: 1 },
+  ]);
+  assert.deepEqual(bars, [
+    { sent: 75, held: 25, notSent: 0, total: 4 },
+    { sent: 25, held: 0, notSent: 25, total: 2 },
+  ]);
+  assert.deepEqual(chartBars([{ sent: 0, held: 0, not_sent: 0 }]), [{ sent: 0, held: 0, notSent: 0, total: 0 }]);
+});
+
+test("chartAxis labels hours for a day and days otherwise", () => {
+  assert.deepEqual(chartAxis("24h"), ["24 h ago", "18 h", "12 h", "6 h", "Now"]);
+  assert.deepEqual(chartAxis("7d"), ["7 days ago", "4 days ago", "Today"]);
+  assert.deepEqual(chartAxis("30d"), ["30 days ago", "15 days ago", "Today"]);
+});
+
+test("statusChips: Sent, Held, Waiting, Rejected always, others when present", () => {
+  assert.deepEqual(statusChips({ sent: 4, failed: 1 }), [
+    { key: "sent", label: "Sent", count: 4 },
+    { key: "held", label: "Held", count: 0 },
+    { key: "waiting", label: "Waiting", count: 0 },
+    { key: "rejected", label: "Rejected", count: 0 },
+    { key: "failed", label: "Failed", count: 1 },
+  ]);
+});
+
+test("pageLabel says which events are shown", () => {
+  assert.equal(pageLabel({ page: 1, page_size: 50, total: 312, rows: 50 }), "Showing 1–50 of 312 events");
+  assert.equal(pageLabel({ page: 7, page_size: 50, total: 312, rows: 12 }), "Showing 301–312 of 312 events");
+  assert.equal(pageLabel({ page: 1, page_size: 50, total: 0, rows: 0 }), "No events");
+});
+
+test("lastCheckLabel: passed or refused, with when", () => {
+  const fmt = () => "2 Oct 2026, 13:58 UTC";
+  assert.deepEqual(lastCheckLabel(pixel({ last_check_ok: true, last_checked_at: "x" }), fmt), {
+    ok: true,
+    text: "Passed · 2 Oct 2026, 13:58 UTC",
+  });
+  assert.deepEqual(
+    lastCheckLabel(pixel({ last_check_ok: false, last_check_error: "Bad token", last_checked_at: "x" }), fmt),
+    { ok: false, text: "Refused · 2 Oct 2026, 13:58 UTC · Bad token" },
+  );
+  assert.deepEqual(lastCheckLabel(pixel({ last_check_ok: null, last_checked_at: null }), fmt), {
+    ok: null,
+    text: "Not checked yet",
+  });
+});
+
+test("deactivatedNote says what is held and when it drops", () => {
+  const off = (stats) => market({ name: "Greece", pixel: pixel({ active: false }), stats });
+  assert.equal(
+    deactivatedNote(off({ held: 0, held_until: null })),
+    "No browser or server events are sent for shoppers in Greece. The pixel ID and token stay saved, so you can turn it back on at any time.",
+  );
+  assert.equal(
+    deactivatedNote(off({ held: 2, held_until: "2026-10-09T10:29:33Z" }), (iso) => `<${iso}>`),
+    "No browser or server events are sent for shoppers in Greece. The pixel ID and token stay saved, so you can turn it back on at any time. " +
+      "2 server events are held and will be sent when you reactivate, if Meta accepts the token. Events still held on <2026-10-09T10:29:33Z> will be dropped.",
+  );
 });

@@ -139,13 +139,14 @@ Open the app in the store's admin. Home is the **Markets** page.
 
 1. **Tiles:** each of the store's Markets should appear as a tile.
 2. **Setup strip → "Turn on the app embed":** in the theme editor, switch on **AFS Multi Pixel** under App embeds and **Save**.
-3. **Each Market you test → "Add pixel":**
-   1. Paste the pixel ID, the Conversions API token and a test event code (from Events Manager → Test events).
-   2. Choose **Check with Meta**, then **Save**.
+3. **Each Market you test → "Configure":**
+   1. Paste the pixel ID and the Conversions API token.
+   2. Choose **Check with Meta**, then **Activate pixel**.
+   3. On the Market page, choose **Edit pixel and token**, add a test event code (from Events Manager → Test events), **Check with Meta** and **Save**.
 4. **Consent banner:** make sure the store asks for cookie consent (Settings → Customer privacy). Tick the step in the setup strip.
 5. **Test:** browse each Market's domain, allow cookies, then view a product, add it to the cart and check out.
    - Events Manager → Test events: each event should arrive once, as both Browser and Server.
-   - The **Event log** shows them as `sent`.
+   - The Market page's **Events** table shows them as **Sent**.
 
 Then work through the full **[release checklist](release-checklist.md)**.
 

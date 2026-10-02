@@ -87,10 +87,12 @@ def test_save_maps_the_market_and_never_returns_the_token(db, client, fakes):
 
     assert response.status_code == 200
     assert TOKEN not in response.text
-    assert response.json()["pixel"] == {
+    pixel = response.json()["pixel"]
+    assert {k: pixel[k] for k in ("pixel_id", "pixel_name", "test_event_code", "token_state", "has_token", "active")} == {
         "pixel_id": PIXEL, "pixel_name": "Dontmiss BG", "test_event_code": "TEST1", "token_state": "ok", "has_token": True,
-        "token_error": None,
+        "active": True,
     }
+    assert (pixel["token_hint"], pixel["last_check_ok"]) == (TOKEN[-4:], True)
 
 
 @pytest.mark.integration
@@ -189,15 +191,64 @@ def test_the_merchant_confirms_setup_steps(db, client, fakes):
     assert response.json() == {"consent_confirmed": False, "verified_in_meta": True}
 
 
+# --- the Market page (#15) -------------------------------------------------------------------
 @pytest.mark.integration
-def test_event_log_endpoint_filters_by_market(db, client, fakes):
+def test_the_market_page_carries_the_market_and_its_figures_for_the_range(db, client, fakes):
     from tests.test_relay import _receive, _relay, _shop
 
     _shop(db)
     _receive(db, _relay(eventId="a"))
-    _receive(db, _relay(eventId="b", marketId="102"))
 
-    rows = client.get(f"/api/v1/internal/tenants/by-shop/{SHOP}/events", params={"market_id": 101},
-                      headers=INTERNAL_HEADERS).json()["events"]
+    body = client.get(f"{BASE}/101", params={"range": "7d"}, headers=INTERNAL_HEADERS).json()
 
-    assert [(r["event_id"], r["sent_as"], r["status"]) for r in rows] == [("a", "Server", "received")]
+    assert body["market"]["name"] == "Bulgaria"
+    assert body["market"]["pixel"]["active"] is True
+    assert body["detail"]["range"] == "7d"
+    assert body["detail"]["browser"] == 1 and len(body["detail"]["series"]) == 7
+    assert body["detail"]["types"] == [{"event_name": "ViewContent", "count": 1, "sent": 0}]
+
+
+@pytest.mark.integration
+def test_the_market_page_refuses_an_unknown_range_or_market(db, client, fakes):
+    _tenant(db)
+    client.get(BASE, params={"sync": "true"}, headers=INTERNAL_HEADERS)
+
+    assert client.get(f"{BASE}/101", params={"range": "1y"}, headers=INTERNAL_HEADERS).status_code == 422
+    assert client.get(f"{BASE}/999", headers=INTERNAL_HEADERS).status_code == 404
+
+
+@pytest.mark.integration
+def test_the_event_table_endpoint_filters_searches_and_pages(db, client, fakes):
+    from tests.test_relay import _receive, _relay, _shop
+
+    _shop(db)
+    _receive(db, _relay(eventId="purchase-42"))
+    _receive(db, _relay(eventId="b"))
+    _receive(db, _relay(eventId="c", marketId="102"))
+
+    body = client.get(
+        f"{BASE}/101/events", params={"range": "24h", "status": "waiting", "q": "42", "page": 1},
+        headers=INTERNAL_HEADERS,
+    ).json()
+
+    assert [(r["event_id"], r["sent_as"], r["status"]) for r in body["rows"]] == [("purchase-42", "Server", "waiting")]
+    assert (body["total"], body["page"], body["page_size"]) == (1, 1, 50)
+    assert body["event_counts"] == {"ViewContent": 1}
+    assert body["status_counts"] == {"waiting": 1}
+
+
+@pytest.mark.integration
+def test_deactivate_reactivate_and_recheck(db, client, fakes):
+    _, meta = fakes
+    _tenant(db)
+    client.get(BASE, params={"sync": "true"}, headers=INTERNAL_HEADERS)
+    client.put(f"{BASE}/101/pixel", json={"pixel_id": PIXEL, "token": TOKEN}, headers=INTERNAL_HEADERS)
+
+    off = client.post(f"{BASE}/101/pixel/deactivate", headers=INTERNAL_HEADERS).json()
+    on = client.post(f"{BASE}/101/pixel/reactivate", headers=INTERNAL_HEADERS).json()
+    meta.result = PixelCheck(ok=False, error="Meta refused the check: expired")
+    check = client.post(f"{BASE}/101/pixel/recheck", headers=INTERNAL_HEADERS).json()
+
+    assert (off["pixel"]["active"], on["pixel"]["active"]) == (False, True)
+    assert check == {"ok": False, "pixel_name": None, "error": "Meta refused the check: expired"}
+    assert client.post(f"{BASE}/102/pixel/deactivate", headers=INTERNAL_HEADERS).status_code == 404

@@ -87,7 +87,10 @@ class StorefrontPublisher:
             raise RuntimeError("SHOPIFY_APP_URL isn't set; the storefront wouldn't know where to send Relays")
         pixels = {
             str(p.shopify_market_id): p.pixel_id
-            for p in self.db.scalars(select(MarketPixel).where(MarketPixel.tenant_id == tenant.id))
+            for p in self.db.scalars(
+                # A deactivated pixel sends nothing, so the storefront doesn't learn of it.
+                select(MarketPixel).where(MarketPixel.tenant_id == tenant.id, MarketPixel.active.is_(True))
+            )
         }
         public_key = relay_key_pair(self.db, self._cipher_or_default()).public_key
         endpoint = relay_endpoint(self._app_url)

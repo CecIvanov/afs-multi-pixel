@@ -130,6 +130,11 @@ class PixelOut(BaseModel):
     token_state: str
     has_token: bool
     token_error: str | None = None
+    active: bool = True
+    token_hint: str | None = None
+    last_check_ok: bool | None = None
+    last_check_error: str | None = None
+    last_checked_at: datetime | None = None
 
 
 class MarketStatsOut(BaseModel):
@@ -206,15 +211,49 @@ class RelayOut(BaseModel):
     outcome: str
 
 
-class EventLogRowOut(BaseModel):
+class TypeCountOut(BaseModel):
+    event_name: str
+    count: int
+    sent: int
+
+
+class BucketOut(BaseModel):
+    sent: int = 0
+    held: int = 0
+    not_sent: int = 0
+
+
+class MarketDetailOut(BaseModel):
+    range: str
+    browser: int = 0
+    sent: int = 0
+    purchases: int = 0
+    purchases_sent: int = 0
+    not_sent: int = 0
+    held: int = 0
+    rejected: int = 0
+    types: list[TypeCountOut] = Field(default_factory=list)
+    series: list[BucketOut] = Field(default_factory=list)
+
+
+class MarketPageOut(BaseModel):
+    market: MarketOut
+    detail: MarketDetailOut
+
+
+class EventRowOut(BaseModel):
     created_at: datetime
     event_name: str
     event_id: str
-    shopify_market_id: int
     sent_as: str
     status: str
     detail: str | None = None
 
 
-class EventLogOut(BaseModel):
-    events: list[EventLogRowOut]
+class EventPageOut(BaseModel):
+    rows: list[EventRowOut]
+    total: int
+    page: int
+    page_size: int
+    event_counts: dict[str, int]
+    status_counts: dict[str, int]

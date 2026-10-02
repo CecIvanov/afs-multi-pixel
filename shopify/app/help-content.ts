@@ -43,7 +43,7 @@ export const HOWTO: HowtoItem[] = [
       "On the Markets page, choose \"Turn on the app embed\" and save the theme editor.",
       "In Meta Events Manager, create or pick one pixel (dataset) per Market, and copy its ID.",
       "In the pixel's Settings → Conversions API, generate an access token.",
-      "In the app, choose \"Add pixel\" on the Market's tile, paste the pixel ID and the token, choose \"Check with Meta\", then Save.",
+      "In the app, choose \"Configure\" on the Market's tile, paste the pixel ID and the token, choose \"Check with Meta\", then \"Activate pixel\".",
       "Repeat for every Market you advertise in.",
       "Make sure your store's cookie banner asks for consent (Settings → Customer privacy).",
     ],
@@ -51,7 +51,7 @@ export const HOWTO: HowtoItem[] = [
   {
     title: "Check events in Meta Events Manager",
     steps: [
-      "Once the pixel is saved, choose \"Edit pixel\" on the Market's tile, add a test event code from Events Manager → Test events, and save.",
+      "Once the pixel is active, choose \"View\" on the Market's tile, then \"Edit pixel and token\". Add a test event code from Events Manager → Test events, choose \"Check with Meta\", and save.",
       "Visit your store on the Market's domain, allow cookies, view a product, add it to the cart and check out.",
       "In Test events, each event should appear once, received from both Browser and Server.",
       "Repeat for each Market and check that each pixel only gets its own Market's events.",

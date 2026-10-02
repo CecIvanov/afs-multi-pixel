@@ -37,6 +37,8 @@ UNREACHABLE_PIXEL_MESSAGE = (
 TOKEN_ERROR_SUBCODES = frozenset({UNREACHABLE_PIXEL_SUBCODE, 458, 459, 460, 463, 464, 467})
 # Meta's codes for "try again later" (unknown, service, rate limits).
 TRANSIENT_ERROR_CODES = frozenset({1, 2, 4, 17, 32, 341, 613})
+DEACTIVATED_DETAIL = "Held while the pixel is deactivated"
+NEEDS_TOKEN_DETAIL = "Waiting for a new Conversions API token"
 FINAL_STATES = (ServerEventStatus.SENT, ServerEventStatus.FAILED, ServerEventStatus.REJECTED, ServerEventStatus.SKIPPED)
 
 
@@ -149,9 +151,13 @@ class ServerEventSender:
             return self._finish(event, ServerEventStatus.SKIPPED, "The Market's pixel was removed or changed")
         if event.created_at and now - event.created_at > META_EVENT_MAX_AGE:
             return self._finish(event, ServerEventStatus.FAILED, "Older than 7 days, past Meta's limit")
+        if not pixel.active:
+            event.status = ServerEventStatus.PAUSED
+            event.meta_response = {"detail": DEACTIVATED_DETAIL}
+            return None
         if pixel.token_state == TokenState.REJECTED or not pixel.capi_token_encrypted:
             event.status = ServerEventStatus.PAUSED
-            event.meta_response = {"detail": "Waiting for a new Conversions API token"}
+            event.meta_response = {"detail": NEEDS_TOKEN_DETAIL}
             return None
         try:
             token = self._cipher_or_default().decrypt(pixel.capi_token_encrypted)
@@ -194,15 +200,7 @@ class ServerEventSender:
         pixel.token_error = detail
         event.status = ServerEventStatus.PAUSED
         event.meta_response = {"detail": detail}
-        self.db.execute(
-            update(ServerEvent)
-            .where(
-                ServerEvent.tenant_id == event.tenant_id,
-                ServerEvent.shopify_market_id == event.shopify_market_id,
-                ServerEvent.status == ServerEventStatus.RECEIVED,
-            )
-            .values(status=ServerEventStatus.PAUSED, meta_response={"detail": "Waiting for a new Conversions API token"})
-        )
+        hold_queued(self.db, event.tenant_id, event.shopify_market_id, NEEDS_TOKEN_DETAIL)
         logger.warn("server_event.token_rejected", {"tenantId": str(event.tenant_id), "marketId": event.shopify_market_id})
 
     def _cipher_or_default(self) -> TokenCipher:
@@ -211,6 +209,19 @@ class ServerEventSender:
 
             self._cipher = token_cipher_from_settings()
         return self._cipher
+
+
+def hold_queued(db: Session, tenant_id, market_id: int, detail: str) -> None:
+    """Pause the Market's queued Server Events (they are "Held" on the Market page)."""
+    db.execute(
+        update(ServerEvent)
+        .where(
+            ServerEvent.tenant_id == tenant_id,
+            ServerEvent.shopify_market_id == market_id,
+            ServerEvent.status == ServerEventStatus.RECEIVED,
+        )
+        .values(status=ServerEventStatus.PAUSED, meta_response={"detail": detail})
+    )
 
 
 def resume_paused(db: Session, tenant_id, market_id: int, now: datetime | None = None) -> int:

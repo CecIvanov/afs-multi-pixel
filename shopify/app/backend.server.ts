@@ -180,6 +180,11 @@ export type MarketPixelRecord = {
   token_state: "ok" | "rejected";
   has_token: boolean;
   token_error: string | null;
+  active: boolean;
+  token_hint: string | null;
+  last_check_ok: boolean | null;
+  last_check_error: string | null;
+  last_checked_at: string | null;
 };
 
 export type MarketStatsRecord = {
@@ -266,21 +271,69 @@ export async function forwardRelay(relay: {
   });
 }
 
-export type EventLogRecord = {
+export type RangeKey = "24h" | "7d" | "30d";
+
+export type MarketDetailRecord = {
+  range: RangeKey;
+  browser: number;
+  sent: number;
+  purchases: number;
+  purchases_sent: number;
+  not_sent: number;
+  held: number;
+  rejected: number;
+  types: { event_name: string; count: number; sent: number }[];
+  series: { sent: number; held: number; not_sent: number }[];
+};
+
+/** One Market for the Market page, with its figures for the range. */
+export async function getMarketPage(shopDomain: string, marketId: number, range: RangeKey) {
+  return backendFetch<{ market: MarketRecord; detail: MarketDetailRecord }>(
+    marketsPath(shopDomain, `/${marketId}?range=${range}`),
+    { shopDomain },
+  );
+}
+
+export type EventRowRecord = {
   created_at: string;
   event_name: string;
   event_id: string;
-  shopify_market_id: number;
   sent_as: string;
-  status: string;
+  status: string; // sent | held | waiting | rejected | failed | skipped
   detail: string | null;
 };
 
-export async function listEvents(shopDomain: string, marketId?: number) {
-  const query = marketId ? `?market_id=${marketId}` : "";
-  return backendFetch<{ events: EventLogRecord[] }>(
-    `/api/v1/internal/tenants/by-shop/${encodeURIComponent(shopDomain)}/events${query}`,
-    { shopDomain },
+export type EventPageRecord = {
+  rows: EventRowRecord[];
+  total: number;
+  page: number;
+  page_size: number;
+  event_counts: Record<string, number>;
+  status_counts: Record<string, number>;
+};
+
+export type EventQuery = { range: RangeKey; event?: string; status?: string; q?: string; page?: number };
+
+export async function listMarketEvents(shopDomain: string, marketId: number, query: EventQuery) {
+  const params = new URLSearchParams({ range: query.range, page: String(query.page ?? 1) });
+  if (query.event) params.set("event", query.event);
+  if (query.status) params.set("status", query.status);
+  if (query.q) params.set("q", query.q);
+  return backendFetch<EventPageRecord>(marketsPath(shopDomain, `/${marketId}/events?${params}`), { shopDomain });
+}
+
+/** Check with Meta for the saved pair; the answer is kept for the connection panel. */
+export async function recheckMarketPixel(shopDomain: string, marketId: number) {
+  return backendFetch<PixelCheckRecord>(marketsPath(shopDomain, `/${marketId}/pixel/recheck`), {
+    method: "POST",
+    shopDomain,
+  });
+}
+
+export async function setMarketPixelActive(shopDomain: string, marketId: number, active: boolean) {
+  return backendFetch<MarketRecord>(
+    marketsPath(shopDomain, `/${marketId}/pixel/${active ? "reactivate" : "deactivate"}`),
+    { method: "POST", shopDomain },
   );
 }
 

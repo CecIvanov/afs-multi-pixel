@@ -14,9 +14,10 @@ from app.schemas import (
     BillingOut,
     BillingReconcileIn,
     BillingReconcileOut,
-    EventLogOut,
-    EventLogRowOut,
+    EventPageOut,
+    MarketDetailOut,
     MarketOut,
+    MarketPageOut,
     MarketsOut,
     MarketStatsOut,
     RelayIn,
@@ -273,14 +274,6 @@ def update_setup(shop_domain: str, payload: SetupIn, db: Session = Depends(get_d
     return _setup_out(tenant)
 
 
-@router.get("/tenants/by-shop/{shop_domain}/events", response_model=EventLogOut)
-def list_events(shop_domain: str, market_id: int | None = None, db: Session = Depends(get_db)) -> EventLogOut:
-    from app.services.event_stats import event_log
-
-    tenant = _tenant_or_404(db, shop_domain)
-    return EventLogOut(events=[EventLogRowOut(**asdict(r)) for r in event_log(db, tenant, market_id=market_id)])
-
-
 @router.post("/relay", response_model=RelayOut)
 def receive_relay(payload: RelayIn, db: Session = Depends(get_db)) -> RelayOut:
     """A Relay from the public /api/events endpoint on the BFF: decrypted,
@@ -341,5 +334,102 @@ def remove_market_pixel(
     tenant = _tenant_or_404(db, shop_domain)
     try:
         return _market_out(markets.remove_pixel(tenant, market_id))
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+def _check_range(range_key: str) -> None:
+    from app.services.event_stats import RANGES
+
+    if range_key not in RANGES:
+        raise HTTPException(status_code=422, detail=f"range must be one of {', '.join(RANGES)}")
+
+
+@router.get("/tenants/by-shop/{shop_domain}/markets/{market_id}", response_model=MarketPageOut)
+def market_page(
+    shop_domain: str,
+    market_id: int,
+    range: str = "24h",  # noqa: A002 — the query parameter's name
+    db: Session = Depends(get_db),
+    markets: MarketService = Depends(get_market_service),
+) -> MarketPageOut:
+    """One Market for the Market page: its pixel, its 24 h tile figures (and held
+    events of any age), and its figures for ``range`` (24h, 7d or 30d)."""
+    from app.services.event_stats import market_detail
+
+    tenant = _tenant_or_404(db, shop_domain)
+    _check_range(range)
+    view = next((m for m in markets.list_markets(tenant) if m.shopify_market_id == market_id), None)
+    if view is None:
+        raise HTTPException(status_code=404, detail=f"Market {market_id} isn't one of this shop's Markets")
+    out = _markets_out(db, tenant, [view]).markets[0]
+    return MarketPageOut(market=out, detail=MarketDetailOut.model_validate(asdict(market_detail(db, tenant, market_id, range))))
+
+
+@router.get("/tenants/by-shop/{shop_domain}/markets/{market_id}/events", response_model=EventPageOut)
+def market_events(
+    shop_domain: str,
+    market_id: int,
+    range: str = "24h",  # noqa: A002 — the query parameter's name
+    event: str | None = None,
+    status: str | None = None,
+    q: str | None = None,
+    page: int = 1,
+    db: Session = Depends(get_db),
+) -> EventPageOut:
+    """The Market page's event table: filter by event name and status (sent, held,
+    waiting, rejected, failed, skipped), search by event ID or order number, 50 a page."""
+    from app.services.event_stats import event_page
+
+    tenant = _tenant_or_404(db, shop_domain)
+    _check_range(range)
+    result = event_page(
+        db, tenant, market_id, range_key=range, event_name=event or None, status=status or None, search=q, page=page
+    )
+    return EventPageOut.model_validate(asdict(result))
+
+
+@router.post("/tenants/by-shop/{shop_domain}/markets/{market_id}/pixel/recheck", response_model=PixelCheckOut)
+def recheck_market_pixel(
+    shop_domain: str,
+    market_id: int,
+    db: Session = Depends(get_db),
+    markets: MarketService = Depends(get_market_service),
+) -> PixelCheckOut:
+    tenant = _tenant_or_404(db, shop_domain)
+    try:
+        check = markets.recheck(tenant, market_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except PixelValidationError as exc:
+        return PixelCheckOut(ok=False, error=str(exc))
+    return PixelCheckOut(**asdict(check))
+
+
+@router.post("/tenants/by-shop/{shop_domain}/markets/{market_id}/pixel/deactivate", response_model=MarketOut)
+def deactivate_market_pixel(
+    shop_domain: str,
+    market_id: int,
+    db: Session = Depends(get_db),
+    markets: MarketService = Depends(get_market_service),
+) -> MarketOut:
+    """Stop the Market's events; the pixel ID and token stay saved."""
+    tenant = _tenant_or_404(db, shop_domain)
+    try:
+        return _market_out(markets.deactivate(tenant, market_id))
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.post("/tenants/by-shop/{shop_domain}/markets/{market_id}/pixel/reactivate", response_model=MarketOut)
+def reactivate_market_pixel(
+    shop_domain: str,
+    market_id: int,
+    db: Session = Depends(get_db),
+    markets: MarketService = Depends(get_market_service),
+) -> MarketOut:
+    tenant = _tenant_or_404(db, shop_domain)
+    try:
+        return _market_out(markets.reactivate(tenant, market_id))
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc

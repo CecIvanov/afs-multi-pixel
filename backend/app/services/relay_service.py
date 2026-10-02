@@ -30,6 +30,7 @@ from app.models import (
     TokenState,
 )
 from app.services.relay_crypto import RelayDecryptError, decrypt_envelope, relay_key_pair
+from app.services.server_event_sender import NEEDS_TOKEN_DETAIL
 from app.services.tenant_service import TenantService
 from app.services.token_cipher import TokenCipher
 
@@ -193,6 +194,8 @@ class RelayService:
         )
         if pixel is None or pixel.pixel_id != str(payload.get("pixelId")):
             return self._reject(tenant, payload, "This Market → pixel pair isn't in the Pixel Mapping")
+        if not pixel.active:
+            return self._reject(tenant, payload, "This Market's pixel is deactivated")
 
         if payload["event"] == "Purchase":
             from app.services.purchase_join import PurchaseJoin
@@ -212,7 +215,7 @@ class RelayService:
                 marketing_consent=True,  # the storefront relays only with marketing consent
                 payload={"event": meta_event(payload, ctx)},
                 status=ServerEventStatus.PAUSED if paused else ServerEventStatus.RECEIVED,
-                meta_response={"detail": "Waiting for a new Conversions API token"} if paused else None,
+                meta_response={"detail": NEEDS_TOKEN_DETAIL} if paused else None,
             )
         )
         self.db.commit()
