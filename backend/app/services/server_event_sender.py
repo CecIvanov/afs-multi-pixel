@@ -28,7 +28,13 @@ logger = get_logger().child({"component": "server_event_sender"})
 META_EVENT_MAX_AGE = timedelta(days=7)
 # Meta's codes for a token that can't be used (expired, revoked, wrong permissions).
 TOKEN_ERROR_CODES = frozenset({102, 190})
-TOKEN_ERROR_SUBCODES = frozenset({458, 459, 460, 463, 464, 467})
+# Subcode 33 is "object does not exist, cannot be loaded due to missing permissions":
+# the token can't send to this pixel, so every event would fail the same way.
+UNREACHABLE_PIXEL_SUBCODE = 33
+UNREACHABLE_PIXEL_MESSAGE = (
+    "This token can't send to this pixel. Check the pixel ID, or generate the token from this pixel's settings."
+)
+TOKEN_ERROR_SUBCODES = frozenset({UNREACHABLE_PIXEL_SUBCODE, 458, 459, 460, 463, 464, 467})
 # Meta's codes for "try again later" (unknown, service, rate limits).
 TRANSIENT_ERROR_CODES = frozenset({1, 2, 4, 17, 32, 341, 613})
 FINAL_STATES = (ServerEventStatus.SENT, ServerEventStatus.FAILED, ServerEventStatus.REJECTED, ServerEventStatus.SKIPPED)
@@ -161,7 +167,8 @@ class ServerEventSender:
         if outcome == "sent":
             self._finish(event, ServerEventStatus.SENT, answer.detail)
         elif outcome == "token":
-            self._reject_token(event, pixel, answer.detail)
+            unreachable = answer.error.get("error_subcode") == UNREACHABLE_PIXEL_SUBCODE
+            self._reject_token(event, pixel, UNREACHABLE_PIXEL_MESSAGE if unreachable else answer.detail)
         elif outcome == "rejected":
             self._finish(event, ServerEventStatus.REJECTED, answer.detail)
         elif event.attempt_count > len(self._schedule):

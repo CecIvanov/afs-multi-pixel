@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 
 from app.logging_config import get_logger
 from app.models import Market, MarketPixel, Tenant, TokenState
+from app.services.server_event_sender import UNREACHABLE_PIXEL_MESSAGE, UNREACHABLE_PIXEL_SUBCODE
 from app.services.storefront_publisher import queue_publish
 from app.services.token_cipher import TokenCipher
 
@@ -83,8 +84,8 @@ def interpret_pixel_check(status_code: int, body: dict[str, Any]) -> PixelCheck:
     message = str(error.get("message") or "")
     if error.get("code") == 100 and not error.get("error_subcode") and "param data" in message:
         return PixelCheck(ok=True)
-    if error.get("error_subcode") == 33:
-        return PixelCheck(ok=False, error="This token can't send to this pixel. Check the pixel ID, or generate the token from this pixel's settings.")
+    if error.get("error_subcode") == UNREACHABLE_PIXEL_SUBCODE:
+        return PixelCheck(ok=False, error=UNREACHABLE_PIXEL_MESSAGE)
     return PixelCheck(ok=False, error=f"Meta refused the check: {message or f'HTTP {status_code}'}")
 
 

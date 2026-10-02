@@ -211,6 +211,26 @@ def test_a_rejected_token_pauses_the_market_and_keeps_its_events(db):
 
 
 @pytest.mark.integration
+def test_a_token_that_cant_reach_the_pixel_pauses_the_market_with_a_plain_reason(db):
+    _shop(db)
+    _receive(db, _relay(eventId="a"))
+    _receive(db, _relay(eventId="b"))
+    # Meta's real answer (UAT, 2026-10-02) when the saved token belongs to another pixel.
+    meta = FakeMetaApi(MetaAnswer(status=400, body={"error": {
+        "message": "Unsupported post request. Object with ID '1134226218952173' does not exist, cannot be loaded "
+                   "due to missing permissions, or does not support this operation.",
+        "type": "GraphMethodException", "code": 100, "error_subcode": 33}}))
+
+    _sender(db, meta).send_due()
+
+    assert len(meta.sent) == 1
+    assert {e.status for e in _events(db)} == {ServerEventStatus.PAUSED}
+    pixel = db.scalar(select(MarketPixel))
+    assert pixel.token_state == TokenState.REJECTED
+    assert pixel.token_error == "This token can't send to this pixel. Check the pixel ID, or generate the token from this pixel's settings."
+
+
+@pytest.mark.integration
 def test_replacing_the_token_resumes_paused_events_under_seven_days_old(db):
     tenant = _shop(db)
     _receive(db, _relay(eventId="fresh"))
