@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { RefreshButton } from "../components/refresh-button";
-import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
+import type { HeadersFunction, ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
+import { boundary } from "@shopify/shopify-app-react-router/server";
 import { Link, useFetcher, useLoaderData, useNavigate, useRouteLoaderData } from "react-router";
 import { authenticate } from "../shopify.server";
 import { listMarkets, updateSetup, type MarketRecord } from "../backend.server";
@@ -295,3 +296,6 @@ function MarketTile({ market, onOpen }: { market: MarketRecord; onOpen: () => vo
     </div>
   );
 }
+
+// Shopify's embedded-app headers (CSP frame-ancestors) on this document too.
+export const headers: HeadersFunction = (headersArgs) => boundary.headers(headersArgs);

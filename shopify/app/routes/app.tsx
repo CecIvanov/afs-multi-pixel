@@ -1,5 +1,15 @@
-import type { HeadersFunction, LoaderFunctionArgs } from "react-router";
-import { Link, Outlet, useLoaderData, useLocation, useRouteError } from "react-router";
+import type { HeadersFunction, LoaderFunctionArgs, ShouldRevalidateFunctionArgs } from "react-router";
+import {
+  Link,
+  Outlet,
+  useFetchers,
+  useLoaderData,
+  useLocation,
+  useNavigation,
+  useRevalidator,
+  useRouteError,
+} from "react-router";
+import { useEffect } from "react";
 import { GoToShopifyPlans } from "../components/go-to-shopify-plans";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { AppProvider } from "@shopify/shopify-app-react-router/react";
@@ -15,6 +25,7 @@ import { heldEventAlerts, marketTileState } from "../markets.shared.mjs";
 import { resolveSupportConfig } from "../support.server";
 import { ViberFab } from "../components/viber-fab";
 import { withRequestContext } from "../request-context.server";
+import { shouldRevalidateAppShell } from "../app-shell-revalidate.shared.mjs";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session, admin, redirect } = await authenticate.admin(request);
@@ -65,8 +76,53 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   });
 };
 
+// Skip re-running this loader (tenant sync, Partner API, backend, Markets) on a
+// plain in-app navigation; see app-shell-revalidate.shared.mjs (from BG Delivery).
+export function shouldRevalidate({ currentUrl, nextUrl, formMethod, defaultShouldRevalidate }: ShouldRevalidateFunctionArgs) {
+  return shouldRevalidateAppShell({
+    formMethod,
+    currentPathname: currentUrl.pathname,
+    nextPathname: nextUrl.pathname,
+    nextSearchParams: nextUrl.searchParams,
+    defaultShouldRevalidate,
+  });
+}
+
+const LOADING_SHOW_DELAY_MS = 150;
+
+/** App Bridge's loading bar (in the admin chrome) for navigations, revalidations
+ *  and saves — ported from BG Delivery. */
+function useGlobalLoadingIndicator() {
+  const navigation = useNavigation();
+  const fetchers = useFetchers();
+  const revalidator = useRevalidator();
+  const busy =
+    navigation.state !== "idle" ||
+    revalidator.state !== "idle" ||
+    fetchers.some((fetcher) => fetcher.state !== "idle" && fetcher.formMethod != null);
+
+  useEffect(() => {
+    const loading = typeof shopify === "undefined" ? undefined : shopify?.loading;
+    if (!loading) return;
+    if (!busy) {
+      loading(false);
+      return;
+    }
+    // Don't flash the bar for navigations faster than the delay.
+    const timer = setTimeout(() => loading(true), LOADING_SHOW_DELAY_MS);
+    return () => {
+      clearTimeout(timer);
+      loading(false);
+    };
+  }, [busy]);
+}
+
 export default function App() {
   const { apiKey, viber, billingEnabled, heldMarkets, goToPlansUrl } = useLoaderData<typeof loader>();
+  // Every hook runs before the early return below (its condition can change
+  // while App stays mounted).
+  const path = useLocation().pathname.replace(/\/$/, "");
+  useGlobalLoadingIndicator();
   if (goToPlansUrl) {
     return (
       <AppProvider apiKey={apiKey}>
@@ -76,14 +132,12 @@ export default function App() {
   }
   const heldAlerts = heldEventAlerts(heldMarkets);
   // The overview and the Market pages show their own copy of the banner.
-  const path = useLocation().pathname.replace(/\/$/, "");
   const onMarketsPage = path === "/app" || path.startsWith("/app/markets/");
   return (
     <AppProvider apiKey={apiKey}>
       <NavMenu>
         <Link to="/app" rel="home">Markets</Link>
         {billingEnabled ? <Link to="/app/billing">Plan</Link> : null}
-        <Link to="/app/settings">Settings</Link>
         <Link to="/app/help">Help</Link>
       </NavMenu>
       {!onMarketsPage && heldAlerts.length ? (

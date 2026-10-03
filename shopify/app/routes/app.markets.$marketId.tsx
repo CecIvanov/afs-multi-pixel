@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import type { ActionFunctionArgs, LoaderFunctionArgs, ShouldRevalidateFunction } from "react-router";
+import type { HeadersFunction, ActionFunctionArgs, LoaderFunctionArgs, ShouldRevalidateFunction } from "react-router";
+import { boundary } from "@shopify/shopify-app-react-router/server";
 import { Link, useFetcher, useLoaderData, useNavigate } from "react-router";
 import { authenticate } from "../shopify.server";
 import {
@@ -944,3 +945,6 @@ function ConnectMode({ market, fetcher }: { market: MarketRecord; fetcher: Retur
     </>
   );
 }
+
+// Shopify's embedded-app headers (CSP frame-ancestors) on this document too.
+export const headers: HeadersFunction = (headersArgs) => boundary.headers(headersArgs);
