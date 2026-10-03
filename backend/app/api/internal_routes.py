@@ -84,19 +84,15 @@ def shopify_session_sync(payload: ShopifySessionSyncIn, db: Session = Depends(ge
 
 @router.post("/shopify/webhooks/ingest", response_model=WebhookIngestOut)
 def shopify_webhook_ingest(payload: WebhookIngestIn, db: Session = Depends(get_db)) -> WebhookIngestOut:
-    """Record a verified webhook + enqueue its durable job. All lifecycle/compliance
-    webhooks (uninstall, redact, scopes) flow through here — processed out-of-band
-    by the job pool, so this returns in ms."""
-    try:
-        result = WebhookIngestService(db).ingest(
-            shop_domain=payload.shop_domain,
-            topic=payload.topic,
-            shopify_webhook_id=payload.shopify_webhook_id,
-            payload=payload.payload,
-            webhook_context=payload.webhook_context,
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    """Store a verified webhook and enqueue its job — always, so Shopify gets its
+    200; the worker decides what to do with it. Returns in ms."""
+    result = WebhookIngestService(db).ingest(
+        shop_domain=payload.shop_domain,
+        topic=payload.topic,
+        shopify_webhook_id=payload.shopify_webhook_id,
+        payload=payload.payload,
+        webhook_context=payload.webhook_context,
+    )
     return WebhookIngestOut(
         status=result.status,
         duplicate=result.duplicate,

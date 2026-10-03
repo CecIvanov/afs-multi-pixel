@@ -1,6 +1,8 @@
 // Topic helpers, duplicated intentionally on both the Node and Python sides so
 // normalization + idempotency agree. Pure functions — unit-testable.
 
+import { createHmac, timingSafeEqual } from "node:crypto";
+
 /** Topics that must return HTTP 2xx to Shopify even when the tenant is unknown. */
 export const IDEMPOTENT_WEBHOOK_TOPICS = new Set([
   "app/uninstalled",
@@ -31,13 +33,17 @@ export function isIdempotentWebhookTopic(topic) {
  * The whole job of every webhook route: verify the HMAC, store the webhook in the
  * backend inbox, answer. No handler work happens here — the backend worker does it.
  *
- * `authenticate` is `shopify.authenticate.webhook`; on a bad HMAC it throws a 401
- * Response, which propagates untouched. A failed store answers 500 so Shopify
- * redelivers.
+ * Shopify's `authenticate.webhook` is NOT used: it loads the shop's offline
+ * session and, with expiring offline tokens, refreshes an expired token before
+ * any topic — which Shopify refuses once the app is uninstalled, so uninstall and
+ * redact webhooks answered 500. Storing a webhook needs no session or token; the
+ * worker reads whatever it needs.
+ *
+ * A bad HMAC answers 401; a failed store answers 500 so Shopify redelivers.
  *
  * @param {Request} request
  * @param {{
- *   authenticate: (request: Request) => Promise<{ shop: string, topic: string, payload?: unknown, session?: any }>,
+ *   apiSecretKey: string,
  *   ingest: (params: { shop: string, topic: string, webhookId: string | null, payload?: Record<string, unknown>, webhookContext?: Record<string, unknown> }) => Promise<unknown>,
  *   withContext?: <T>(request: Request, shop: string, fn: () => Promise<T>) => Promise<T>,
  *   logInfo?: (event: string, fields?: Record<string, unknown>) => void,
@@ -46,13 +52,27 @@ export function isIdempotentWebhookTopic(topic) {
  * @returns {Promise<Response>}
  */
 export async function receiveWebhook(request, deps) {
-  const { authenticate, ingest, withContext = (_request, _shop, fn) => fn(), logInfo = () => {}, logError = () => {} } = deps;
-  const verified = await authenticate(request);
-  const { shop, payload, session } = verified;
-  // The header is the exact topic ("app/scopes_update"); authenticate returns the
-  // lossy storage form ("APP_SCOPES_UPDATE").
-  const topic = request.headers.get("X-Shopify-Topic") || verified.topic;
+  const {
+    apiSecretKey,
+    ingest,
+    withContext = (_request, _shop, fn) => fn(),
+    logInfo = () => {},
+    logError = () => {},
+  } = deps;
+  if (request.method !== "POST") return new Response(undefined, { status: 405 });
+  const rawBody = await request.text();
+  if (!hasValidHmac(rawBody, request.headers.get("X-Shopify-Hmac-Sha256"), apiSecretKey)) {
+    return new Response(undefined, { status: 401, statusText: "Unauthorized" });
+  }
+  const shop = request.headers.get("X-Shopify-Shop-Domain") || "";
+  const topic = request.headers.get("X-Shopify-Topic") || "";
   const webhookId = request.headers.get("X-Shopify-Webhook-Id");
+  let payload;
+  try {
+    payload = rawBody ? JSON.parse(rawBody) : undefined;
+  } catch {
+    return new Response(undefined, { status: 400, statusText: "Bad Request" });
+  }
 
   return withContext(request, shop, async () => {
     logInfo("shopify.webhook.received", { topic, shop });
@@ -62,7 +82,6 @@ export async function receiveWebhook(request, deps) {
         topic,
         webhookId,
         payload: /** @type {Record<string, unknown> | undefined} */ (payload),
-        webhookContext: webhookContextFor(topic, payload, session),
       });
     } catch (error) {
       logError("shopify.webhook.ingest_failed", error, { shop, topic });
@@ -73,21 +92,15 @@ export async function receiveWebhook(request, deps) {
 }
 
 /**
- * app/scopes_update carries the session token + new scopes so the worker can
- * persist them on the tenant. Every other topic needs nothing beyond its payload.
+ * Shopify signs the raw body with the app secret (base64 HMAC-SHA256).
  *
- * @param {string} topic
- * @param {any} payload
- * @param {any} session
- * @returns {Record<string, unknown> | undefined}
+ * @param {string} rawBody
+ * @param {string | null} given
+ * @param {string} secret
  */
-function webhookContextFor(topic, payload, session) {
-  if (normalizeWebhookTopic(topic) !== "app/scopes_update" || !session?.accessToken) return undefined;
-  return {
-    access_token: session.accessToken,
-    scopes: ((payload?.current ?? [])).join(","),
-    refresh_token: session.refreshToken ?? undefined,
-    access_token_expires_at: session.expires?.toISOString(),
-    refresh_token_expires_at: session.refreshTokenExpires?.toISOString(),
-  };
+export function hasValidHmac(rawBody, given, secret) {
+  if (!secret || !given) return false;
+  const expected = Buffer.from(createHmac("sha256", secret).update(rawBody, "utf8").digest("base64"), "utf8");
+  const actual = Buffer.from(given, "utf8");
+  return actual.length === expected.length && timingSafeEqual(actual, expected);
 }

@@ -32,7 +32,22 @@ def dispatch_job(db: Session, job: AsyncJob) -> None:
     handler = _REGISTRY.get(job.operation)
     if handler is None:
         raise ValueError(f"No handler registered for operation {job.operation.value}")
+    if job.shopify_webhook_id and not _tenant_takes_webhook(db, job):
+        # Stored and answered 200 at ingest; an uninstalled shop gets only its
+        # lifecycle/compliance work.
+        logger.info("job.skipped_inactive_tenant", {"jobId": str(job.id), "operation": job.operation.value})
+        return
     handler(db, job)
+
+
+def _tenant_takes_webhook(db: Session, job: AsyncJob) -> bool:
+    from app.models import Tenant, TenantStatus
+    from app.services.webhook_ingest_service import INACTIVE_TENANT_ALLOWED_OPERATIONS
+
+    tenant = db.get(Tenant, job.tenant_id)
+    if tenant is None:
+        return False
+    return tenant.status == TenantStatus.ACTIVE or job.operation in INACTIVE_TENANT_ALLOWED_OPERATIONS
 
 
 def _shop_domain(db: Session, job: AsyncJob) -> str:
@@ -101,17 +116,25 @@ def _handle_customer_redact(db: Session, job: AsyncJob) -> None:
 
 @job_handler(AsyncJobOperation.SCOPES_UPDATE)
 def _handle_scopes_update(db: Session, job: AsyncJob) -> None:
+    """Persist the new scopes with the shop's stored offline token (the Prisma
+    Session row); the webhook route only stores the webhook."""
+    from app.services.shopify_session_service import ShopifySessionService
     from app.services.tenant_service import TenantService
 
-    ctx = (job.payload or {}).get("webhook_context") or {}
-    access_token = ctx.get("access_token")
+    shop = _shop_domain(db, job)
+    payload = job.payload or {}
+    ctx = payload.get("webhook_context") or {}  # jobs queued before the route stopped sending it
+    stored = ShopifySessionService(db).get_offline_session(shop) or {}
+    access_token = ctx.get("access_token") or stored.get("access_token")
     if not access_token:
         return  # nothing to persist without the session token
+    current = payload.get("current")
+    scopes = ",".join(current) if isinstance(current, list) else ctx.get("scopes") or stored.get("scopes")
     TenantService(db).sync_shopify_session(
-        _shop_domain(db, job),
+        shop,
         access_token=access_token,
-        scopes=ctx.get("scopes"),
-        refresh_token=ctx.get("refresh_token"),
+        scopes=scopes,
+        refresh_token=ctx.get("refresh_token") or stored.get("refresh_token"),
     )
 
 

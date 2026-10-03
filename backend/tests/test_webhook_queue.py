@@ -47,16 +47,59 @@ def test_ingest_coalesces_pending_work(db):
 
 
 @pytest.mark.integration
-def test_ingest_unknown_shop_idempotent_for_compliance(db):
-    # No tenant created. Compliance/lifecycle topics must be accepted (ignored), not error.
-    r = WebhookIngestService(db).ingest(shop_domain="ghost.myshopify.com", topic="shop/redact", shopify_webhook_id="g1")
-    assert r.status == "ignored"
+def test_every_webhook_is_stored_even_for_an_unknown_shop(db):
+    from app.models import WebhookEvent
+
+    for topic, webhook_id in (("shop/redact", "g1"), ("app/scopes_update", "g2"), ("orders/create", "g3")):
+        r = WebhookIngestService(db).ingest(shop_domain="ghost.myshopify.com", topic=topic, shopify_webhook_id=webhook_id)
+        assert r.status == "stored" and r.job_id is None, topic
+
+    events = db.scalars(select(WebhookEvent).order_by(WebhookEvent.shopify_webhook_id)).all()
+    assert [e.shopify_webhook_id for e in events] == ["g1", "g2", "g3"]
+    assert all(e.error_message == "no tenant for this shop: ghost.myshopify.com" for e in events)
 
 
 @pytest.mark.integration
-def test_ingest_unknown_shop_raises_for_non_idempotent(db):
-    with pytest.raises(ValueError):
-        WebhookIngestService(db).ingest(shop_domain="ghost.myshopify.com", topic="app/scopes_update", shopify_webhook_id="g2")
+def test_a_topic_without_a_handler_is_stored_too(db):
+    _make_tenant(db)
+    r = _ingest(db, "products/update", "p1")
+    assert r.status == "stored" and r.job_id is None
+
+
+@pytest.mark.integration
+def test_an_uninstalled_shops_webhook_is_stored_and_the_worker_skips_non_lifecycle_work(db):
+    from app.services.job_processors import dispatch_job
+
+    tenant = _make_tenant(db)
+    TenantService(db).sync_shopify_uninstall(SHOP)
+    r = _ingest(db, "markets/update", "m1", payload={"id": 1})
+    assert r.status == "accepted"  # stored + queued, no longer refused at ingest
+
+    job = db.get(AsyncJob, r.job_id)
+    dispatch_job(db, job)  # skipped: the tenant isn't active (would otherwise call Shopify)
+    db.refresh(tenant)
+    assert tenant.status != TenantStatus.ACTIVE
+
+
+@pytest.mark.integration
+def test_scopes_update_job_uses_the_stored_offline_token(db):
+    from app.services.job_processors import dispatch_job
+
+    tenant = _make_tenant(db)
+    db.execute(
+        text(
+            'INSERT INTO "Session" (id, shop, state, "isOnline", scope, "accessToken") '
+            "VALUES ('offline_queue-shop.myshopify.com', :shop, 's', false, 'read_markets', 'shpat_stored')"
+        ),
+        {"shop": SHOP},
+    )
+    db.commit()
+    r = _ingest(db, "app/scopes_update", "s1", payload={"current": ["read_markets", "read_orders"]})
+
+    dispatch_job(db, db.get(AsyncJob, r.job_id))
+
+    db.refresh(tenant)
+    assert tenant.scopes == "read_markets,read_orders"
 
 
 @pytest.mark.integration

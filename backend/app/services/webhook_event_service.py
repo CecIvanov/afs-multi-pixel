@@ -46,6 +46,13 @@ class WebhookEventService:
         self.db.add(event)
         self.db.commit()
 
+    def mark_skipped(self, event: WebhookEvent, reason: str) -> None:
+        """Stored, with no job to run (unknown shop or topic); the caller commits."""
+        event.status = WebhookEventStatus.PROCESSED
+        event.processed_at = datetime.now(UTC)
+        event.error_message = reason
+        self.db.add(event)
+
     def mark_failed(self, event: WebhookEvent, message: str) -> None:
         event.status = WebhookEventStatus.FAILED
         event.error_message = message

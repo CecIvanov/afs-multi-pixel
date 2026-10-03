@@ -1,8 +1,12 @@
-"""Turn a verified Shopify webhook into a durable job.
+"""Store a verified Shopify webhook and hand it to the worker.
 
-Node verifies HMAC then POSTs here; this records a WebhookEvent (delivery-level
-dedup) and enqueues one job (work-level dedup via the pending index), returning
-fast. Lifecycle/compliance topics return 2xx even when the tenant is gone.
+Node verifies the HMAC then POSTs here; this ALWAYS stores the webhook as a
+WebhookEvent (delivery-level dedup on Shopify's webhook id) and answers, so
+Shopify gets its 200. It decides nothing: when the topic has a job and the shop
+has a tenant, one job is enqueued (work-level dedup via the pending index) and
+the worker decides what to do — including skipping work for an uninstalled
+tenant. A webhook with no job to run (unknown shop or topic) stays stored with
+the reason.
 """
 
 from __future__ import annotations
@@ -15,7 +19,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from app.logging_config import get_logger
-from app.models import AsyncJobOperation, TenantStatus
+from app.models import AsyncJobOperation
 from app.services.async_job_service import AsyncJobService
 from app.services.tenant_service import TenantService
 from app.services.webhook_event_service import WebhookEventService
@@ -35,9 +39,9 @@ TOPIC_TO_OPERATION: dict[str, AsyncJobOperation] = {
     "markets/delete": AsyncJobOperation.MARKETS_SYNC,
 }
 
-# These must return 2xx to Shopify even when the shop row is unknown (already
-# uninstalled, or the webhook beat backend provisioning).
-IDEMPOTENT_MISSING_TENANT_OPERATIONS = frozenset(
+# Operations the worker still runs for a tenant that isn't active (uninstalled
+# shops still get redacted). See job_processors.dispatch_job.
+INACTIVE_TENANT_ALLOWED_OPERATIONS = frozenset(
     {
         AsyncJobOperation.APP_UNINSTALL,
         AsyncJobOperation.SHOP_REDACT,
@@ -45,8 +49,6 @@ IDEMPOTENT_MISSING_TENANT_OPERATIONS = frozenset(
         AsyncJobOperation.CUSTOMER_REDACT,
     }
 )
-# Ops allowed even when the tenant isn't active (uninstalled shops still get redacted).
-INACTIVE_TENANT_ALLOWED_OPERATIONS = IDEMPOTENT_MISSING_TENANT_OPERATIONS
 
 
 def normalize_webhook_topic(topic: str) -> str:
@@ -97,28 +99,25 @@ class WebhookIngestService:
         webhook_context: dict[str, Any] | None = None,
     ) -> WebhookIngestResult:
         normalized = normalize_webhook_topic(topic)
-        operation = TOPIC_TO_OPERATION.get(normalized)
-        if operation is None:
-            raise ValueError(f"Unsupported webhook topic: {topic}")
-
         tenant = self.tenants.get_tenant_by_shop_domain(shop_domain)
-        if not tenant:
-            if operation in IDEMPOTENT_MISSING_TENANT_OPERATIONS:
-                logger.info("webhook.ingest.ignored", {"topic": normalized, "shop": shop_domain, "reason": "tenant_not_found"})
-                return WebhookIngestResult(status="ignored")
-            raise ValueError("Tenant not found")
 
-        if tenant.status != TenantStatus.ACTIVE and operation not in INACTIVE_TENANT_ALLOWED_OPERATIONS:
-            raise ValueError("Tenant is not active")
+        # Store first, always. Delivery-level dedup on the Shopify webhook id.
+        webhook_event = self.webhooks.record_received(
+            shopify_webhook_id=shopify_webhook_id or f"local-{uuid.uuid4()}",
+            topic=normalized,
+            tenant_id=tenant.id if tenant else None,
+            payload=payload or {},
+        )
+        if webhook_event is None:
+            return WebhookIngestResult(status="duplicate", duplicate=True)
 
-        # Delivery-level dedup on the Shopify webhook id.
-        webhook_event = None
-        if shopify_webhook_id:
-            webhook_event = self.webhooks.record_received(
-                shopify_webhook_id=shopify_webhook_id, topic=normalized, tenant_id=tenant.id, payload=payload or {}
-            )
-            if webhook_event is None:
-                return WebhookIngestResult(status="duplicate", duplicate=True)
+        operation = TOPIC_TO_OPERATION.get(normalized)
+        if operation is None or tenant is None:
+            reason = "no handler for this topic" if operation is None else "no tenant for this shop"
+            self.webhooks.mark_skipped(webhook_event, f"{reason}: {shop_domain}")
+            self.db.commit()
+            logger.info("webhook.stored_without_job", {"topic": normalized, "shop": shop_domain, "reason": reason})
+            return WebhookIngestResult(status="stored", webhook_event_id=webhook_event.id)
 
         job_payload: dict[str, Any] = dict(payload or {})
         if webhook_context:
@@ -130,11 +129,9 @@ class WebhookIngestService:
             topic=normalized,
             dedupe_key=_dedupe_key(operation, payload),
             shopify_webhook_id=shopify_webhook_id,
-            webhook_event_id=webhook_event.id if webhook_event else None,
+            webhook_event_id=webhook_event.id,
             payload=job_payload or None,
         )
         self.db.commit()
         logger.info("webhook.ingested", {"topic": normalized, "jobId": str(job.id)})
-        return WebhookIngestResult(
-            status="accepted", job_id=job.id, webhook_event_id=webhook_event.id if webhook_event else None
-        )
+        return WebhookIngestResult(status="accepted", job_id=job.id, webhook_event_id=webhook_event.id)

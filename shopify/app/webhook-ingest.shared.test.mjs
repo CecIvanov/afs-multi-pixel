@@ -1,9 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
-import "@shopify/shopify-app-react-router/adapters/node";
-import { ApiVersion, shopifyApp } from "@shopify/shopify-app-react-router/server";
 import {
+  hasValidHmac,
   isIdempotentWebhookTopic,
   normalizeWebhookTopic,
   receiveWebhook,
@@ -30,21 +29,6 @@ test("isIdempotentWebhookTopic flags lifecycle + compliance topics", () => {
 
 // --- receiveWebhook: verify, store, answer -----------------------------------
 const SECRET = "test-secret";
-const noSessions = {
-  storeSession: async () => true,
-  loadSession: async () => undefined,
-  deleteSession: async () => true,
-  deleteSessions: async () => true,
-  findSessionsByShop: async () => [],
-};
-const { authenticate } = shopifyApp({
-  apiKey: "test-key",
-  apiSecretKey: SECRET,
-  apiVersion: ApiVersion.October26,
-  appUrl: "https://app.test",
-  sessionStorage: noSessions,
-  isTesting: true,
-});
 
 function webhookRequest({ topic = "customers/redact", body = { orders_to_redact: [1] }, hmac } = {}) {
   const raw = JSON.stringify(body);
@@ -70,32 +54,38 @@ function recordingIngest() {
   return { calls, ingest };
 }
 
+test("hasValidHmac checks Shopify's signature of the raw body", () => {
+  const sig = createHmac("sha256", SECRET).update("{}").digest("base64");
+  assert.equal(hasValidHmac("{}", sig, SECRET), true);
+  assert.equal(hasValidHmac('{"a":1}', sig, SECRET), false);
+  assert.equal(hasValidHmac("{}", sig, ""), false);
+  assert.equal(hasValidHmac("{}", null, SECRET), false);
+});
+
 test("receiveWebhook rejects a bad HMAC with 401 and stores nothing", async () => {
   const { calls, ingest } = recordingIngest();
-  const response = await receiveWebhook(webhookRequest({ hmac: "not-the-hmac" }), {
-    authenticate: authenticate.webhook,
-    ingest,
-  }).catch((thrown) => thrown);
-  assert.ok(response instanceof Response);
+  const response = await receiveWebhook(webhookRequest({ hmac: "not-the-hmac" }), { apiSecretKey: SECRET, ingest });
   assert.equal(response.status, 401);
   assert.equal(calls.length, 0);
 });
 
 test("receiveWebhook stores a verified webhook with its Shopify ID and answers 200", async () => {
   const { calls, ingest } = recordingIngest();
-  const request = webhookRequest({ topic: "customers/data_request" });
-  const response = await receiveWebhook(request, { authenticate: authenticate.webhook, ingest });
+  const response = await receiveWebhook(webhookRequest({ topic: "customers/data_request" }), {
+    apiSecretKey: SECRET,
+    ingest,
+  });
   assert.equal(response.status, 200);
   assert.equal(calls.length, 1);
   assert.equal(calls[0].shop, "shop-a.myshopify.com");
-  assert.equal(calls[0].topic, "customers/data_request"); // the exact header, not CUSTOMERS_DATA_REQUEST
+  assert.equal(calls[0].topic, "customers/data_request");
   assert.equal(calls[0].webhookId, "wh-123");
   assert.deepEqual(calls[0].payload, { orders_to_redact: [1] });
 });
 
 test("receiveWebhook answers 500 when the webhook could not be stored, so Shopify redelivers", async () => {
   const response = await receiveWebhook(webhookRequest(), {
-    authenticate: authenticate.webhook,
+    apiSecretKey: SECRET,
     ingest: async () => {
       throw new Error("backend down");
     },
@@ -103,20 +93,11 @@ test("receiveWebhook answers 500 when the webhook could not be stored, so Shopif
   assert.equal(response.status, 500);
 });
 
-test("receiveWebhook passes the session token along on app/scopes_update", async () => {
-  const { calls, ingest } = recordingIngest();
-  const fakeAuthenticate = async () => ({
-    shop: "shop-a.myshopify.com",
-    topic: "APP_SCOPES_UPDATE",
-    payload: { current: ["read_markets", "read_orders"] },
-    session: { accessToken: "shpat_1", refreshToken: "rt_1", expires: new Date("2026-10-02T00:00:00Z") },
-  });
-  await receiveWebhook(webhookRequest({ topic: "app/scopes_update" }), { authenticate: fakeAuthenticate, ingest });
-  assert.deepEqual(calls[0].webhookContext, {
-    access_token: "shpat_1",
-    scopes: "read_markets,read_orders",
-    refresh_token: "rt_1",
-    access_token_expires_at: "2026-10-02T00:00:00.000Z",
-    refresh_token_expires_at: undefined,
-  });
+test("every verified topic is just stored and answered 200 — no session, no token", async () => {
+  for (const topic of ["app/uninstalled", "shop/redact", "customers/redact", "customers/data_request", "app/scopes_update", "orders/create"]) {
+    const { calls, ingest } = recordingIngest();
+    const response = await receiveWebhook(webhookRequest({ topic, body: { id: 1 } }), { apiSecretKey: SECRET, ingest });
+    assert.equal(response.status, 200, topic);
+    assert.deepEqual(calls, [{ shop: "shop-a.myshopify.com", topic, webhookId: "wh-123", payload: { id: 1 } }], topic);
+  }
 });
