@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   billingRedirectHints,
+  isFullPageLoad,
   requiresPlanSelection,
   returnedFromShopifyBilling,
   shouldReuseCheck,
@@ -30,4 +31,9 @@ test("a recent check is reused unless the merchant just came back from billing",
   assert.equal(shouldReuseCheck({ ...base, now: 2_000, forceFresh: true }), false);
   assert.equal(shouldReuseCheck({ ...base, now: 302_000, forceFresh: false }), false);
   assert.equal(shouldReuseCheck({ cachedAt: null, ttlMs: 300_000, now: 2_000, forceFresh: false }), false);
+});
+
+test("only the admin's own page load (?embedded=1) is redirected on the server", () => {
+  assert.equal(isFullPageLoad(new URL("https://app.example/app/billing?embedded=1&shop=s")), true);
+  assert.equal(isFullPageLoad(new URL("https://app.example/app/billing.data")), false);
 });

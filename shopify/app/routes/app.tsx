@@ -1,5 +1,6 @@
 import type { HeadersFunction, LoaderFunctionArgs } from "react-router";
 import { Link, Outlet, useLoaderData, useLocation, useRouteError } from "react-router";
+import { GoToShopifyPlans } from "../components/go-to-shopify-plans";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { AppProvider } from "@shopify/shopify-app-react-router/react";
 import { NavMenu } from "@shopify/app-bridge-react";
@@ -7,7 +8,7 @@ import { NavMenu } from "@shopify/app-bridge-react";
 import { authenticate } from "../shopify.server";
 import { ensureBackendTenant } from "../tenant.server";
 import { syncPlanWithShopify } from "../subscription.server";
-import { billingRedirectHints, requiresPlanSelection } from "../subscription.shared.mjs";
+import { billingRedirectHints, isFullPageLoad, requiresPlanSelection } from "../subscription.shared.mjs";
 import { billingMode, managedPricingPlansUrl, resolveAppHandle } from "../billing.server";
 import { fetchBillingByShop, listMarkets } from "../backend.server";
 import { heldEventAlerts, marketTileState } from "../markets.shared.mjs";
@@ -27,7 +28,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     // Plans (spec §5): the plan chosen at install (or on Shopify's plan page) is
     // synced from Shopify and stored, including the ?plan_handle=… Shopify adds
     // when it sends the merchant back. Until a plan is stored, every app open goes
-    // to Shopify's plan page.
+    // to Shopify's plan page (the Plan page route always goes there itself).
     const url = new URL(request.url);
     const billingEnabled = billingMode() !== "disabled";
     const onPlanPage = url.pathname === "/app/billing";
@@ -38,9 +39,9 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     // The effective plan, and a downgrade waiting for the end of the cycle.
     const plan = billingEnabled ? await fetchBillingByShop(session.shop).catch(() => null) : null;
     const subscribed = Boolean(plan?.subscribed);
-    if (resolveAppHandle() && requiresPlanSelection({ billingEnabled, subscribed })) {
-      throw redirect(managedPricingPlansUrl(session.shop), { target: "_top" });
-    }
+    const plansUrl = billingEnabled && resolveAppHandle() ? managedPricingPlansUrl(session.shop) : null;
+    const goToPlans = Boolean(plansUrl) && !onPlanPage && requiresPlanSelection({ billingEnabled, subscribed });
+    if (goToPlans && isFullPageLoad(url)) throw redirect(plansUrl!, { target: "_top" });
     const support = resolveSupportConfig();
     // Markets whose server events are on hold, so every page can say so; the
     // Markets page shows its own copy from fresher data.
@@ -57,13 +58,22 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
         : null,
       billingEnabled,
       subscribed,
+      // An in-app navigation that must go to Shopify's plan page (see App).
+      goToPlansUrl: goToPlans ? plansUrl : null,
       viber: support.viber, // { enabled, numberE164, label }
     };
   });
 };
 
 export default function App() {
-  const { apiKey, viber, billingEnabled, heldMarkets } = useLoaderData<typeof loader>();
+  const { apiKey, viber, billingEnabled, heldMarkets, goToPlansUrl } = useLoaderData<typeof loader>();
+  if (goToPlansUrl) {
+    return (
+      <AppProvider apiKey={apiKey}>
+        <GoToShopifyPlans url={goToPlansUrl} />
+      </AppProvider>
+    );
+  }
   const heldAlerts = heldEventAlerts(heldMarkets);
   // The overview and the Market pages show their own copy of the banner.
   const path = useLocation().pathname.replace(/\/$/, "");

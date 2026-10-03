@@ -26,6 +26,16 @@ export function requiresPlanSelection({ billingEnabled, subscribed }) {
   return billingEnabled && !subscribed;
 }
 
+/**
+ * Is this the admin loading the app's page itself (?embedded=1)? Only then can
+ * the server redirect to Shopify's plan page; an in-app navigation is a data
+ * request, where Shopify's redirect() answers a bare 401 — so the page opens
+ * the plan page with App Bridge instead.
+ */
+export function isFullPageLoad(url) {
+  return url.searchParams.get("embedded") === "1";
+}
+
 /** The Partner API is slow and rate-limited: reuse a recent answer, except right
  * after a billing redirect or on the Plan page. */
 export function shouldReuseCheck({ cachedAt, now, ttlMs, forceFresh }) {
