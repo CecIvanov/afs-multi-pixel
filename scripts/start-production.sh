@@ -7,3 +7,5 @@ ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 # shellcheck source=lib/stack.sh
 source "${ROOT_DIR}/scripts/lib/stack.sh"
 start_stack production
+# What Shopify's reviewers hit: containers, API, /, /privacy, /terms, webhooks.
+"${ROOT_DIR}/scripts/smoke.sh" production
