@@ -36,6 +36,24 @@ export function isFullPageLoad(url) {
   return url.searchParams.get("embedded") === "1";
 }
 
+/**
+ * The redirect hint, only when Shopify confirms it: the shop must have an ACTIVE
+ * app subscription (Admin API currentAppInstallation.activeSubscriptions, which
+ * shows it at once), and a ?charge_id must be that subscription's ID. A hand-made
+ * or replayed ?plan_handle=… (after a cancel) is dropped.
+ *
+ * @param {{ planHandle: string | null, chargeId: string | null }} hints
+ * @param {{ id?: string | null, status?: string | null }[]} activeSubscriptions
+ * @returns {{ plan_handle: string, charge_id: string | null } | null}
+ */
+export function verifiedRedirectHint(hints, activeSubscriptions) {
+  if (!hints.planHandle) return null;
+  const active = (activeSubscriptions || []).filter((s) => String(s.status || "").toUpperCase() === "ACTIVE");
+  if (!active.length) return null;
+  if (hints.chargeId && !active.some((s) => String(s.id || "").split("/").pop() === hints.chargeId)) return null;
+  return { plan_handle: hints.planHandle, charge_id: hints.chargeId };
+}
+
 /** The Partner API is slow and rate-limited: reuse a recent answer, except right
  * after a billing redirect or on the Plan page. */
 export function shouldReuseCheck({ cachedAt, now, ttlMs, forceFresh }) {

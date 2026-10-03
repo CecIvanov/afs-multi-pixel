@@ -110,3 +110,16 @@ export async function fetchShopGid(admin: AdminClient): Promise<string> {
   if (!id) throw new Error("Shopify didn't return the shop's ID");
   return id;
 }
+
+export type ActiveAppSubscription = { id: string | null; name: string | null; status: string | null };
+
+/** The shop's active app subscriptions from the Admin API — current at once,
+ *  unlike the Partner API — to confirm Shopify's redirect after plan selection. */
+export async function fetchActiveAppSubscriptions(admin: AdminClient): Promise<ActiveAppSubscription[]> {
+  const response = await admin.graphql(`#graphql
+    query MultiPixelActiveSubscriptions { currentAppInstallation { activeSubscriptions { id name status } } }`);
+  const body = (await response.json()) as {
+    data?: { currentAppInstallation?: { activeSubscriptions?: ActiveAppSubscription[] } };
+  };
+  return body.data?.currentAppInstallation?.activeSubscriptions ?? [];
+}

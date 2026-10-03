@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
+  verifiedRedirectHint,
   billingRedirectHints,
   isFullPageLoad,
   requiresPlanSelection,
@@ -36,4 +37,24 @@ test("a recent check is reused unless the merchant just came back from billing",
 test("only the admin's own page load (?embedded=1) is redirected on the server", () => {
   assert.equal(isFullPageLoad(new URL("https://app.example/app/billing?embedded=1&shop=s")), true);
   assert.equal(isFullPageLoad(new URL("https://app.example/app/billing.data")), false);
+});
+
+test("the plan in Shopify's redirect counts only when Shopify shows that subscription active", () => {
+  const active = [{ id: "gid://shopify/AppSubscription/123", status: "ACTIVE" }];
+  assert.deepEqual(verifiedRedirectHint({ planHandle: "light", chargeId: "123" }, active), {
+    plan_handle: "light",
+    charge_id: "123",
+  });
+  assert.deepEqual(verifiedRedirectHint({ planHandle: "light", chargeId: null }, active), {
+    plan_handle: "light",
+    charge_id: null,
+  });
+  // A replayed or hand-made URL: no active subscription, or another charge.
+  assert.equal(verifiedRedirectHint({ planHandle: "light", chargeId: "123" }, []), null);
+  assert.equal(verifiedRedirectHint({ planHandle: "light", chargeId: "999" }, active), null);
+  assert.equal(
+    verifiedRedirectHint({ planHandle: "light", chargeId: "123" }, [{ id: "gid://shopify/AppSubscription/123", status: "CANCELLED" }]),
+    null,
+  );
+  assert.equal(verifiedRedirectHint({ planHandle: null, chargeId: "123" }, active), null);
 });
