@@ -1,17 +1,27 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { honoursRedirectHint, planHandleHint, shouldReuseCheck } from "./subscription.shared.mjs";
+import {
+  billingRedirectHints,
+  requiresPlanSelection,
+  returnedFromShopifyBilling,
+  shouldReuseCheck,
+} from "./subscription.shared.mjs";
 
-test("the redirect after choosing a plan lets the merchant in while the Partner API catches up", () => {
-  assert.equal(honoursRedirectHint(true, null), true);
-  assert.equal(honoursRedirectHint(false, null), false);
-  assert.equal(honoursRedirectHint(false, "shopify-test"), true);
-  assert.equal(honoursRedirectHint(false, "none"), false);
+test("billingRedirectHints reads what Shopify adds after the merchant picks a plan", () => {
+  const back = billingRedirectHints(new URL("https://app.example/app?shop=s&plan_handle=Light&charge_id=123"));
+  assert.deepEqual(back, { planHandle: "light", chargeId: "123" });
+  assert.equal(returnedFromShopifyBilling(back), true);
+
+  const plain = billingRedirectHints(new URL("https://app.example/app?shop=s"));
+  assert.deepEqual(plain, { planHandle: null, chargeId: null });
+  assert.equal(returnedFromShopifyBilling(plain), false);
+  assert.equal(returnedFromShopifyBilling({ planHandle: null, chargeId: "123" }), true);
 });
 
-test("planHandleHint reads Shopify's redirect after the merchant picks a plan", () => {
-  assert.equal(planHandleHint(new URL("https://app.example/app?shop=s&plan_handle=light")), "light");
-  assert.equal(planHandleHint(new URL("https://app.example/app?shop=s")), null);
+test("a shop goes to Shopify's plan page until a plan is stored", () => {
+  assert.equal(requiresPlanSelection({ billingEnabled: true, subscribed: false }), true);
+  assert.equal(requiresPlanSelection({ billingEnabled: true, subscribed: true }), false);
+  assert.equal(requiresPlanSelection({ billingEnabled: false, subscribed: false }), false);
 });
 
 test("a recent check is reused unless the merchant just came back from billing", () => {

@@ -148,3 +148,18 @@ def test_the_daily_check_catches_a_cancellation_made_outside_the_app(db):
     assert check_all_subscriptions(db, CancelledEverywhere()) == {"checked": 1, "failed": 0}
     db.refresh(tenant)
     assert tenant.subscription_active is False
+
+
+@pytest.mark.integration
+def test_app_open_after_choosing_a_plan_stores_the_plan_from_shopifys_redirect(db, client):
+    _tenant(db)
+
+    response = client.post(
+        "/api/v1/internal/billing/reconcile",
+        json={"shop_domain": SHOP, "source": "redirect", "partner_snapshot": {"has_active_contract": False},
+              "redirect_hint": {"plan_handle": "Light", "charge_id": "123"}},
+        headers=INTERNAL_HEADERS,
+    )
+
+    assert response.json()["subscribed"] is True
+    assert response.json()["effective_plan_handle"] == "light"

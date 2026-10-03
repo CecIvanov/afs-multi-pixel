@@ -38,12 +38,20 @@ class PartnerSnapshotIn(BaseModel):
     trial_ends_at: datetime | None = None
 
 
+class BillingRedirectHintIn(BaseModel):
+    """What Shopify adds to the app URL after the merchant picks a plan."""
+
+    plan_handle: str | None = None
+    charge_id: str | None = None
+
+
 class BillingReconcileIn(BaseModel):
     shop_domain: str
     source: str = "app_load"
     partner_snapshot: PartnerSnapshotIn
     # gid://shopify/Shop/<id>, kept so the daily check can ask the Partner API.
     shop_gid: str | None = None
+    redirect_hint: BillingRedirectHintIn | None = None
 
 
 class BillingReconcileOut(BaseModel):

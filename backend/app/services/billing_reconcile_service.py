@@ -11,12 +11,18 @@ this mirrors its standard plan changes, by catalog rank:
 - cycle end: Shopify reports the lower plan as effective, which applies at once.
 No contract means the free handle ("none": no access). The tenant's
 ``subscription_active`` (which gates Relays) follows the effective plan.
+
+Right after the merchant picks a plan, Shopify sends them back with
+``?plan_handle=…`` — often before the Partner API shows the subscription. That
+handle is stored as the plan (source "redirect"), and for a grace period a
+snapshot without a contract doesn't undo it; after that the Partner API (also
+read daily) decides again.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from enum import Enum
 
 from sqlalchemy import select
@@ -36,6 +42,10 @@ from app.services.partner_billing_client import PartnerSubscriptionSnapshot
 from app.services.tenant_service import TenantService
 
 logger = get_logger().child({"component": "billing_reconcile"})
+
+# How long a plan taken from Shopify's redirect stands while the Partner API
+# still shows no subscription.
+REDIRECT_GRACE = timedelta(minutes=30)
 
 
 class ReconcileAction(str, Enum):
@@ -90,7 +100,11 @@ class BillingReconcileService:
         return plan.handle if plan else None
 
     def reconcile(
-        self, shop_domain: str, snapshot: PartnerSubscriptionSnapshot, source: BillingReconcileSource
+        self,
+        shop_domain: str,
+        snapshot: PartnerSubscriptionSnapshot,
+        source: BillingReconcileSource,
+        redirect_plan_handle: str | None = None,
     ) -> ReconcileResult:
         tenant = TenantService(self.db).get_tenant_by_shop_domain(shop_domain)
         if not tenant:
@@ -98,10 +112,19 @@ class BillingReconcileService:
 
         sub = self.billing.get_subscription(tenant.id)
         before_effective = self.billing.current_plan_handle(tenant.id)
-        before_pending = self._pending_handle(sub)
+
+        if not snapshot.has_active_contract and self._is_paid_plan(redirect_plan_handle):
+            # Shopify's redirect names the plan the merchant just approved; the
+            # Partner API hasn't caught up yet.
+            snapshot = PartnerSubscriptionSnapshot(has_active_contract=True, effective_plan_handle=redirect_plan_handle)
+            source = BillingReconcileSource.REDIRECT
 
         if not snapshot.has_active_contract:
-            action = self._to_free(tenant, sub, before_effective)
+            action = (
+                ReconcileAction.UNCHANGED
+                if self._within_redirect_grace(tenant)
+                else self._to_free(tenant, sub, before_effective)
+            )
         else:
             action = self._with_contract(tenant, sub, snapshot, before_effective)
 
@@ -119,6 +142,25 @@ class BillingReconcileService:
             self._write_event(tenant, action, before_effective, effective_after, pending_after, source, snapshot)
         logger.info("billing.reconciled", {"shop": shop_domain, "action": action.value, "effective": effective_after})
         return ReconcileResult(action=action, effective_plan_handle=effective_after, pending_plan_handle=pending_after)
+
+    @staticmethod
+    def _is_paid_plan(handle: str | None) -> bool:
+        return bool(handle) and handle != free_plan_handle() and plan_by_handle(handle) is not None
+
+    def _within_redirect_grace(self, tenant: Tenant) -> bool:
+        """Was the current plan set from Shopify's redirect only moments ago?"""
+        last = self.db.scalars(
+            select(BillingSubscriptionEvent)
+            .where(BillingSubscriptionEvent.tenant_id == tenant.id)
+            .order_by(BillingSubscriptionEvent.created_at.desc())
+            .limit(1)
+        ).first()
+        if last is None or last.source != BillingReconcileSource.REDIRECT:
+            return False
+        if last.effective_plan_handle == free_plan_handle():
+            return False
+        at = last.created_at if last.created_at.tzinfo else last.created_at.replace(tzinfo=UTC)
+        return datetime.now(UTC) - at < REDIRECT_GRACE
 
     def _to_free(self, tenant: Tenant, sub, before_effective: str) -> ReconcileAction:
         if sub is None or before_effective == free_plan_handle():

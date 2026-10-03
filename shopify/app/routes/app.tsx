@@ -6,9 +6,9 @@ import { NavMenu } from "@shopify/app-bridge-react";
 
 import { authenticate } from "../shopify.server";
 import { ensureBackendTenant } from "../tenant.server";
-import { checkPlanSubscription } from "../subscription.server";
-import { planHandleHint } from "../subscription.shared.mjs";
-import { billingMode } from "../billing.server";
+import { syncPlanWithShopify } from "../subscription.server";
+import { billingRedirectHints, requiresPlanSelection } from "../subscription.shared.mjs";
+import { billingMode, managedPricingPlansUrl, resolveAppHandle } from "../billing.server";
 import { fetchBillingByShop, listMarkets } from "../backend.server";
 import { heldEventAlerts, marketTileState } from "../markets.shared.mjs";
 import { resolveSupportConfig } from "../support.server";
@@ -24,23 +24,23 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     } catch {
       // Token sync must never block the embedded admin from loading.
     }
-    // Plans (spec §5): without one the admin shows only the Plan page. Shopify's
-    // redirect after plan selection carries ?plan_handle=…, which forces a fresh
-    // check.
+    // Plans (spec §5): the plan chosen at install (or on Shopify's plan page) is
+    // synced from Shopify and stored, including the ?plan_handle=… Shopify adds
+    // when it sends the merchant back. Until a plan is stored, every app open goes
+    // to Shopify's plan page.
     const url = new URL(request.url);
     const billingEnabled = billingMode() !== "disabled";
     const onPlanPage = url.pathname === "/app/billing";
     // A custom app (UAT) has no billing: there's no Plan page to show.
     if (!billingEnabled && onPlanPage) throw redirect("/app");
-    const subscription = await checkPlanSubscription(admin, session.shop, {
-      hint: planHandleHint(url),
-      fresh: onPlanPage,
-    });
-    if (!subscription.active && !onPlanPage) {
-      throw redirect("/app/billing");
-    }
+    const hints = billingRedirectHints(url);
+    if (billingEnabled) await syncPlanWithShopify(admin, session.shop, { hints, fresh: onPlanPage });
     // The effective plan, and a downgrade waiting for the end of the cycle.
     const plan = billingEnabled ? await fetchBillingByShop(session.shop).catch(() => null) : null;
+    const subscribed = Boolean(plan?.subscribed);
+    if (resolveAppHandle() && requiresPlanSelection({ billingEnabled, subscribed })) {
+      throw redirect(managedPricingPlansUrl(session.shop), { target: "_top" });
+    }
     const support = resolveSupportConfig();
     // Markets whose server events are on hold, so every page can say so; the
     // Markets page shows its own copy from fresher data.
@@ -56,7 +56,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
           }
         : null,
       billingEnabled,
-      subscribed: subscription.active,
+      subscribed,
       viber: support.viber, // { enabled, numberE164, label }
     };
   });

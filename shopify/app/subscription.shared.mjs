@@ -1,19 +1,29 @@
-// Plan access (spec §1, §5), billed by Shopify App Pricing: the shop's plan is read
-// from the Partner API and reconciled in the backend. Pure, so node --test covers it.
+// Plan access (spec §1, §5), billed by Shopify App Pricing: on app open the
+// shop's plan is read from the Partner API and stored by the backend; a shop
+// without a stored plan is sent to Shopify's plan page until it has one, and
+// Shopify sends the merchant back with ?plan_handle=… (and ?charge_id=…), which
+// the backend stores while the Partner API catches up. Pure, so node --test covers it.
 
-/**
- * Right after the merchant picks a plan, Shopify's redirect names it; the Partner
- * API may not show it yet, so the redirect alone lets the merchant in this once.
- * @param {boolean} subscribed  what the backend reconciled
- * @param {string | null} hint  ?plan_handle=… from the redirect
- */
-export function honoursRedirectHint(subscribed, hint) {
-  return subscribed || Boolean(hint && hint !== "none");
+/** What Shopify adds to the app URL after the merchant picks a plan. */
+export function billingRedirectHints(url) {
+  return {
+    planHandle: url.searchParams.get("plan_handle")?.trim().toLowerCase() || null,
+    chargeId: url.searchParams.get("charge_id")?.trim() || null,
+  };
 }
 
-/** Shopify redirects back with ?plan_handle=… once the merchant picks a plan. */
-export function planHandleHint(url) {
-  return url.searchParams.get("plan_handle")?.trim().toLowerCase() || null;
+/** Did Shopify just send the merchant back from its plan page? */
+export function returnedFromShopifyBilling(hints) {
+  return Boolean(hints.planHandle || hints.chargeId);
+}
+
+/**
+ * Send the shop to Shopify's plan page? Whenever billing is on and no plan is
+ * stored — again and again until one is. (A merchant back from that page with
+ * ?plan_handle=… has it stored first, so they get in.)
+ */
+export function requiresPlanSelection({ billingEnabled, subscribed }) {
+  return billingEnabled && !subscribed;
 }
 
 /** The Partner API is slow and rate-limited: reuse a recent answer, except right

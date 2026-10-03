@@ -194,3 +194,67 @@ def test_a_future_higher_plan_follows_the_same_rules(db, monkeypatch):
     assert _reconcile(db, _snapshot("pro")).action == ReconcileAction.UPGRADE_APPLIED
     scheduled = _reconcile(db, _snapshot("pro", pending="light"))
     assert (scheduled.effective_plan_handle, scheduled.pending_plan_handle) == ("pro", "light")
+
+
+# --- Shopify's redirect after the merchant picks a plan --------------------------------
+def _no_contract() -> PartnerSubscriptionSnapshot:
+    return PartnerSubscriptionSnapshot(has_active_contract=False)
+
+
+def _redirect(db, handle):
+    return BillingReconcileService(db).reconcile(
+        SHOP, _no_contract(), BillingReconcileSource.APP_LOAD, redirect_plan_handle=handle
+    )
+
+
+@pytest.mark.integration
+def test_the_plan_in_shopifys_redirect_is_stored_before_the_partner_api_shows_it(db):
+    tenant = _tenant(db)
+
+    result = _redirect(db, "light")
+
+    assert (result.action, result.effective_plan_handle) == (ReconcileAction.INITIAL_SELECTION, "light")
+    assert _subscribed(db, tenant) is True
+    event = db.scalars(select(BillingSubscriptionEvent)).one()
+    assert event.source == BillingReconcileSource.REDIRECT
+
+
+@pytest.mark.integration
+def test_the_next_app_open_keeps_the_redirected_plan_while_the_partner_api_catches_up(db):
+    tenant = _tenant(db)
+    _redirect(db, "light")
+
+    assert _reconcile(db, _no_contract()).effective_plan_handle == "light"
+    assert _subscribed(db, tenant) is True
+
+
+@pytest.mark.integration
+def test_after_the_grace_period_the_partner_api_decides_again(db):
+    tenant = _tenant(db)
+    _redirect(db, "light")
+    event = db.scalars(select(BillingSubscriptionEvent)).one()
+    event.created_at = datetime.now(UTC) - timedelta(hours=1)
+    db.commit()
+
+    assert _reconcile(db, _no_contract()).effective_plan_handle == "none"
+    assert _subscribed(db, tenant) is False
+
+
+@pytest.mark.integration
+def test_a_redirect_naming_no_plan_or_an_unknown_plan_gives_no_access(db):
+    tenant = _tenant(db)
+
+    assert _redirect(db, "none").effective_plan_handle == "none"
+    assert _redirect(db, "enterprise").effective_plan_handle == "none"
+    assert _subscribed(db, tenant) is False
+
+
+@pytest.mark.integration
+def test_the_partner_api_wins_over_the_redirect_when_it_already_shows_the_plan(db):
+    _tenant(db)
+
+    result = BillingReconcileService(db).reconcile(
+        SHOP, _snapshot("shopify-test"), BillingReconcileSource.REDIRECT, redirect_plan_handle="light"
+    )
+
+    assert result.effective_plan_handle == "shopify-test"

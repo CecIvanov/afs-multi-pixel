@@ -116,7 +116,8 @@ def get_tenant_by_shop(shop_domain: str, db: Session = Depends(get_db)) -> Tenan
 @router.post("/billing/reconcile", response_model=BillingReconcileOut)
 def billing_reconcile(payload: BillingReconcileIn, db: Session = Depends(get_db)) -> BillingReconcileOut:
     """Reconcile the tenant's subscription against a Partner-API snapshot (passed
-    by the Node app on app load, or by the scheduled worker)."""
+    by the Node app on app load, or by the scheduled worker), plus the plan handle
+    from Shopify's redirect right after the merchant picks a plan."""
     from app.models import BillingReconcileSource
     from app.services.billing_reconcile_service import BillingReconcileService
     from app.services.partner_billing_client import PartnerSubscriptionSnapshot
@@ -144,7 +145,10 @@ def billing_reconcile(payload: BillingReconcileIn, db: Session = Depends(get_db)
     if payload.shop_gid and (shop_id := numeric_id(payload.shop_gid)) is not None:
         tenant.shopify_shop_id = shop_id
         db.commit()
-    result = BillingReconcileService(db).reconcile(payload.shop_domain, snapshot, source)
+    hint = payload.redirect_hint.plan_handle if payload.redirect_hint else None
+    result = BillingReconcileService(db).reconcile(
+        payload.shop_domain, snapshot, source, redirect_plan_handle=(hint or "").strip().lower() or None
+    )
     return BillingReconcileOut(
         status="ok",
         action=result.action.value,

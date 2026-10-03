@@ -158,6 +158,7 @@ export async function reconcileBilling(payload: {
   source: string;
   partner_snapshot: Record<string, unknown>;
   shop_gid?: string;
+  redirect_hint?: { plan_handle: string | null; charge_id: string | null };
 }) {
   return backendFetch<{
     status: string;

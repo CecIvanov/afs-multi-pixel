@@ -3,35 +3,33 @@ import { reconcileBilling } from "./backend.server";
 import { billingMode } from "./billing.server";
 import { logError, logInfo } from "./logger.server";
 import { fetchPartnerSubscriptionSnapshot, fetchShopGid } from "./partner-billing.server";
-import { honoursRedirectHint, shouldReuseCheck } from "./subscription.shared.mjs";
+import { returnedFromShopifyBilling, shouldReuseCheck } from "./subscription.shared.mjs";
 
-const CHECK_TTL_MS = 5 * 60 * 1000;
+const SYNC_TTL_MS = 5 * 60 * 1000;
 
-type CheckResult = { active: boolean };
-const lastCheck = new Map<string, { at: number; result: CheckResult }>();
-const inFlight = new Map<string, Promise<CheckResult>>();
+type Hints = { planHandle: string | null; chargeId: string | null };
+
+const lastSync = new Map<string, number>();
+const inFlight = new Map<string, Promise<void>>();
 
 /**
- * Does the shop have a plan (spec §5)? On app open the Partner API
- * activeSubscription is read and handed to the backend, which reconciles it the
- * way Shopify changes plans (upgrade at once; downgrade pending until the cycle
- * ends) and answers whether the effective plan gives access (any catalog plan
- * above "none"). `hint` is the plan_handle Shopify adds to the URL right after the
- * merchant picks a plan: it forces a fresh read and is honoured while the Partner
- * API catches up. Billing mode "disabled" (the UAT custom app) always has access,
- * and a failed read never locks a merchant out.
+ * Sync the shop's plan with Shopify (spec §5), as BG Delivery does: the Partner
+ * API activeSubscription and Shopify's redirect hints (?plan_handle, ?charge_id)
+ * go to the backend, which stores the plan the way Shopify changes plans
+ * (upgrade at once; downgrade pending until the cycle ends). The caller then
+ * reads the stored plan. A failed sync is logged and leaves the stored plan as is.
  */
-export async function checkPlanSubscription(
+export async function syncPlanWithShopify(
   admin: AdminApiContext,
   shop: string,
-  { hint = null, fresh = false }: { hint?: string | null; fresh?: boolean } = {},
-): Promise<CheckResult> {
-  if (billingMode() === "disabled") return { active: true };
+  { hints, fresh = false }: { hints: Hints; fresh?: boolean },
+): Promise<void> {
+  if (billingMode() === "disabled") return;
 
-  const forceFresh = fresh || Boolean(hint);
-  const cached = lastCheck.get(shop);
-  if (shouldReuseCheck({ cachedAt: cached?.at ?? null, now: Date.now(), ttlMs: CHECK_TTL_MS, forceFresh })) {
-    return cached!.result;
+  const returned = returnedFromShopifyBilling(hints);
+  const forceFresh = fresh || returned;
+  if (shouldReuseCheck({ cachedAt: lastSync.get(shop) ?? null, now: Date.now(), ttlMs: SYNC_TTL_MS, forceFresh })) {
+    return;
   }
   const running = inFlight.get(shop);
   if (running) return running;
@@ -42,23 +40,22 @@ export async function checkPlanSubscription(
       const snapshot = await fetchPartnerSubscriptionSnapshot(shopGid);
       const reconciled = await reconcileBilling({
         shop_domain: shop,
-        source: hint ? "redirect" : fresh ? "billing_page" : "app_load",
+        source: returned ? "redirect" : fresh ? "billing_page" : "app_load",
         partner_snapshot: snapshot,
         shop_gid: shopGid,
+        redirect_hint: returned ? { plan_handle: hints.planHandle, charge_id: hints.chargeId } : undefined,
       });
-      const result = { active: honoursRedirectHint(reconciled.subscribed, hint) };
-      lastCheck.set(shop, { at: Date.now(), result });
+      lastSync.set(shop, Date.now());
       logInfo("billing.reconciled", {
         shop,
         action: reconciled.action,
         effective: reconciled.effective_plan_handle,
         pending: reconciled.pending_plan_handle,
-        hint,
+        planHandle: hints.planHandle,
+        chargeId: hints.chargeId,
       });
-      return result;
     } catch (error) {
-      logError("subscription_check_failed", error, { shop });
-      return { active: true };
+      logError("billing.reconcile_failed", error, { shop, planHandle: hints.planHandle, chargeId: hints.chargeId });
     } finally {
       inFlight.delete(shop);
     }
