@@ -16,6 +16,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import delete, select, text, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
@@ -33,12 +34,20 @@ _PRIORITY: dict[AsyncJobOperation, int] = {
     AsyncJobOperation.SCOPES_UPDATE: 70,
     AsyncJobOperation.ORDERS_CREATE: 60,
     AsyncJobOperation.MARKETS_SYNC: 60,
+    AsyncJobOperation.SUBSCRIPTION_CHECK: 75,
     # Publishing a changed mapping comes before re-syncs: the storefront acts on it.
     AsyncJobOperation.PIXEL_MAPPING_PUBLISH: 65,
     AsyncJobOperation.STOREFRONT_HOSTS_SYNC: 40,
     AsyncJobOperation.EXAMPLE_OP: 50,
     AsyncJobOperation.SHOP_INFO_FETCH: 10,
 }
+
+
+GDPR_OPERATIONS = (
+    AsyncJobOperation.SHOP_REDACT,
+    AsyncJobOperation.CUSTOMER_DATA_REQUEST,
+    AsyncJobOperation.CUSTOMER_REDACT,
+)
 
 
 def priority_for(operation: AsyncJobOperation) -> int:
@@ -72,48 +81,77 @@ class AsyncJobService:
         scheduled_at: datetime | None = None,
     ) -> AsyncJob:
         dedupe_key = dedupe_key or operation.value
-        existing = self.db.scalar(
-            select(AsyncJob).where(
-                AsyncJob.tenant_id == tenant_id,
-                AsyncJob.operation == operation,
-                AsyncJob.dedupe_key == dedupe_key,
-                AsyncJob.status == AsyncJobStatus.PENDING,
+        for _attempt in range(2):
+            existing = self.db.scalar(
+                select(AsyncJob).where(
+                    AsyncJob.tenant_id == tenant_id,
+                    AsyncJob.operation == operation,
+                    AsyncJob.dedupe_key == dedupe_key,
+                    AsyncJob.status == AsyncJobStatus.PENDING,
+                )
             )
-        )
-        if existing:
-            # Coalesce: fold the new arrival into the pending job.
-            existing.topic = topic
-            if shopify_webhook_id:
-                existing.shopify_webhook_id = shopify_webhook_id
-            if webhook_event_id:
-                existing.webhook_event_id = webhook_event_id
-            if payload is not None:
-                existing.payload = payload
-            existing.scheduled_at = scheduled_at
-            existing.priority = priority_for(operation)
-            self.db.commit()
-            self.db.refresh(existing)
-            logger.info("job.enqueued", {"jobId": str(existing.id), "operation": operation.value, "coalesced": True})
-            return existing
+            if existing:
+                return self._coalesce(existing, topic, shopify_webhook_id, webhook_event_id, payload, scheduled_at)
 
-        job = AsyncJob(
-            tenant_id=tenant_id,
-            operation=operation,
-            topic=topic,
-            dedupe_key=dedupe_key,
-            priority=priority_for(operation),
-            shopify_webhook_id=shopify_webhook_id,
-            webhook_event_id=webhook_event_id,
-            payload=payload,
-            scheduled_at=scheduled_at,
-            status=AsyncJobStatus.PENDING,
-            max_attempts=len(get_settings().job_retry_schedule_seconds) + 1,
-        )
-        self.db.add(job)
+            job = AsyncJob(
+                tenant_id=tenant_id,
+                operation=operation,
+                topic=topic,
+                dedupe_key=dedupe_key,
+                priority=priority_for(operation),
+                shopify_webhook_id=shopify_webhook_id,
+                webhook_event_id=webhook_event_id,
+                payload=payload,
+                scheduled_at=scheduled_at,
+                status=AsyncJobStatus.PENDING,
+                max_attempts=len(get_settings().job_retry_schedule_seconds) + 1,
+            )
+            try:
+                # A savepoint: losing the race on the pending-dedupe index must not
+                # roll back the caller's work (the stored webhook event).
+                with self.db.begin_nested():
+                    self.db.add(job)
+                    self.db.flush()
+            except IntegrityError:
+                # Another arrival created the same pending job a moment ago: fold
+                # into it instead of failing (which answered Shopify 500).
+                continue
+            self.db.commit()
+            self.db.refresh(job)
+            logger.info("job.enqueued", {"jobId": str(job.id), "operation": operation.value, "coalesced": False})
+            return job
+        raise RuntimeError(f"could not enqueue {operation.value} for tenant {tenant_id}")
+
+    def _coalesce(
+        self,
+        existing: AsyncJob,
+        topic: str,
+        shopify_webhook_id: str | None,
+        webhook_event_id: uuid.UUID | None,
+        payload: dict[str, Any] | None,
+        scheduled_at: datetime | None,
+    ) -> AsyncJob:
+        """Fold a new arrival into the pending job. The webhook event it replaces is
+        marked processed (else it stayed "received" forever)."""
+        if webhook_event_id and existing.webhook_event_id and existing.webhook_event_id != webhook_event_id:
+            replaced = self.db.get(WebhookEvent, existing.webhook_event_id)
+            if replaced is not None:
+                replaced.status = WebhookEventStatus.PROCESSED
+                replaced.processed_at = datetime.now(UTC)
+                replaced.error_message = f"coalesced into job {existing.id}"
+        existing.topic = topic
+        if shopify_webhook_id:
+            existing.shopify_webhook_id = shopify_webhook_id
+        if webhook_event_id:
+            existing.webhook_event_id = webhook_event_id
+        if payload is not None:
+            existing.payload = payload
+        existing.scheduled_at = scheduled_at
+        existing.priority = priority_for(existing.operation)
         self.db.commit()
-        self.db.refresh(job)
-        logger.info("job.enqueued", {"jobId": str(job.id), "operation": operation.value, "coalesced": False})
-        return job
+        self.db.refresh(existing)
+        logger.info("job.enqueued", {"jobId": str(existing.id), "operation": existing.operation.value, "coalesced": True})
+        return existing
 
     def enqueue_shop_info_fetch(self, tenant_id: uuid.UUID, *, topic: str = "install/shop_info") -> AsyncJob:
         return self.enqueue(tenant_id=tenant_id, operation=AsyncJobOperation.SHOP_INFO_FETCH, topic=topic)
@@ -132,6 +170,8 @@ class AsyncJobService:
             delete(AsyncJob).where(
                 AsyncJob.tenant_id == tenant_id,
                 AsyncJob.status == AsyncJobStatus.PENDING,
+                # GDPR requests must still be answered after an uninstall.
+                AsyncJob.operation.not_in(GDPR_OPERATIONS),
             )
         )
         self.db.commit()
@@ -331,6 +371,15 @@ class AsyncJobService:
         logger.warn("job.retry_scheduled", {"jobId": str(job.id), "attempt": job.attempt_count, "delaySeconds": delay})
 
     # --- maintenance ---------------------------------------------------------
+    def touch_claim(self, job_id: uuid.UUID) -> None:
+        """Heartbeat of a running job (job_pool): it isn't stale."""
+        self.db.execute(
+            update(AsyncJob)
+            .where(AsyncJob.id == job_id, AsyncJob.status == AsyncJobStatus.PROCESSING)
+            .values(claimed_at=datetime.now(UTC))
+        )
+        self.db.commit()
+
     def reclaim_stale_processing_jobs(self, older_than_seconds: int | None = None) -> int:
         settings = get_settings()
         cutoff = datetime.now(UTC) - timedelta(

@@ -44,7 +44,7 @@ export function isIdempotentWebhookTopic(topic) {
  * @param {Request} request
  * @param {{
  *   apiSecretKey: string,
- *   ingest: (params: { shop: string, topic: string, webhookId: string | null, payload?: Record<string, unknown>, webhookContext?: Record<string, unknown> }) => Promise<unknown>,
+ *   ingest: (params: { shop: string, topic: string, webhookId: string | null, triggeredAt: string | null, payload?: Record<string, unknown> }) => Promise<unknown>,
  *   withContext?: <T>(request: Request, shop: string, fn: () => Promise<T>) => Promise<T>,
  *   logInfo?: (event: string, fields?: Record<string, unknown>) => void,
  *   logError?: (event: string, error: unknown, fields?: Record<string, unknown>) => void,
@@ -67,6 +67,8 @@ export async function receiveWebhook(request, deps) {
   const shop = request.headers.get("X-Shopify-Shop-Domain") || "";
   const topic = request.headers.get("X-Shopify-Topic") || "";
   const webhookId = request.headers.get("X-Shopify-Webhook-Id");
+  // When Shopify fired it: lets the worker tell a stale app/uninstalled from a reinstall.
+  const triggeredAt = request.headers.get("X-Shopify-Triggered-At");
   let payload;
   try {
     payload = rawBody ? JSON.parse(rawBody) : undefined;
@@ -81,6 +83,7 @@ export async function receiveWebhook(request, deps) {
         shop,
         topic,
         webhookId,
+        triggeredAt,
         payload: /** @type {Record<string, unknown> | undefined} */ (payload),
       });
     } catch (error) {

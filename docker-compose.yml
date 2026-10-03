@@ -26,6 +26,9 @@ x-backend-env: &backend-env
   APP_NAME: ${APP_NAME:-}
   LOG_LEVEL: ${LOG_LEVEL:-info}
   DATABASE_URL: postgresql://${DB_USER:-afsmultipixel_dev}:${DATABASE_PASSWORD:-test123}@${DATABASE_HOST:-postgres}:${DATABASE_PORT:-5432}/${DB_NAME:-afsmultipixel_dev}
+  # From .env.<stack> (they never reached the containers before).
+  DATABASE_POOL_SIZE: ${DATABASE_POOL_SIZE:-5}
+  DATABASE_MAX_OVERFLOW: ${DATABASE_MAX_OVERFLOW:-5}
   REDIS_URL: redis://redis:6379/0
   CELERY_TASK_QUEUE: ${APP_CELERY_KEY_PREFIX:-afsmultipixel}-${APP_ENV:-dev}
   CELERY_REDIS_KEY_PREFIX: "${APP_CELERY_KEY_PREFIX:-afsmultipixel}-${APP_ENV:-dev}:"
@@ -132,6 +135,17 @@ services:
     environment:
       <<: *backend-env
       RUN_DB_MIGRATIONS: "false"
+      # 8 job slots, each with a claim heartbeat, plus the server-event loop and
+      # the reaper: the default pool (5 + 5) ran out of connections.
+      DATABASE_POOL_SIZE: ${JOBS_DATABASE_POOL_SIZE:-12}
+      DATABASE_MAX_OVERFLOW: ${JOBS_DATABASE_MAX_OVERFLOW:-8}
+    # The pool touches this file every second; stale means it's wedged.
+    healthcheck:
+      test: ["CMD", "python", "-c", "import os,sys,time; sys.exit(0 if time.time() - os.path.getmtime('/tmp/job_pool.alive') < 60 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
     depends_on:
       api:
         condition: service_healthy

@@ -28,6 +28,11 @@ api_version = "2026-10"
   topics = ["app/scopes_update"]
   uri = "/webhooks/app/scopes_update"
 
+  # A plan approved, changed or cancelled on Shopify: the worker re-reads it at once.
+  [[webhooks.subscriptions]]
+  topics = ["app_subscriptions/update"]
+  uri = "/webhooks/app_subscriptions/update"
+
 
   [[webhooks.subscriptions]]
   compliance_topics = ["customers/data_request"]

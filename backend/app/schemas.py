@@ -15,6 +15,8 @@ class WebhookIngestIn(BaseModel):
     shop_domain: str
     topic: str
     shopify_webhook_id: str | None = None
+    # X-Shopify-Triggered-At: when Shopify fired the webhook (not when it arrived).
+    triggered_at: datetime | None = None
     payload: dict[str, Any] | None = None
     webhook_context: dict[str, Any] | None = None
 

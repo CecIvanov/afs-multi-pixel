@@ -104,6 +104,15 @@ class ShopifySessionService:
             },
         )
 
+    def update_offline_scope(self, shop_domain: str, scopes: str) -> int:
+        """app/scopes_update: keep the Prisma offline Session's scope in step, so the
+        Node library doesn't assume a scope the merchant revoked. The caller commits."""
+        result = self.db.execute(
+            text('UPDATE "Session" SET scope = :scope WHERE shop = :shop AND "isOnline" = false'),
+            {"scope": scopes, "shop": shop_domain},
+        )
+        return int(result.rowcount or 0)
+
     def delete_shop_sessions(self, shop_domain: str) -> int:
         """Delete every Prisma ``Session`` row for the shop (app/uninstalled)."""
         result = self.db.execute(text('DELETE FROM "Session" WHERE shop = :shop'), {"shop": shop_domain})

@@ -7,6 +7,7 @@ up. A handler raising propagates to AsyncJobService._retry_or_fail (retry/backof
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from typing import Callable
 
 from sqlalchemy.orm import Session
@@ -34,8 +35,9 @@ def dispatch_job(db: Session, job: AsyncJob) -> None:
         raise ValueError(f"No handler registered for operation {job.operation.value}")
     if job.shopify_webhook_id and not _tenant_takes_webhook(db, job):
         # Stored and answered 200 at ingest; an uninstalled shop gets only its
-        # lifecycle/compliance work.
+        # lifecycle/compliance work. A skipped order's body isn't kept (spec §7).
         logger.info("job.skipped_inactive_tenant", {"jobId": str(job.id), "operation": job.operation.value})
+        _drop_personal_data(db, job)
         return
     handler(db, job)
 
@@ -47,7 +49,35 @@ def _tenant_takes_webhook(db: Session, job: AsyncJob) -> bool:
     tenant = db.get(Tenant, job.tenant_id)
     if tenant is None:
         return False
-    return tenant.status == TenantStatus.ACTIVE or job.operation in INACTIVE_TENANT_ALLOWED_OPERATIONS
+    if tenant.status == TenantStatus.ACTIVE or job.operation in INACTIVE_TENANT_ALLOWED_OPERATIONS:
+        return True
+    # A suspended (not uninstalled) shop still keeps its scopes in step.
+    return tenant.status == TenantStatus.SUSPENDED and job.operation == AsyncJobOperation.SCOPES_UPDATE
+
+
+def _drop_personal_data(db: Session, job: AsyncJob) -> None:
+    from app.models import WebhookEvent
+    from app.services.webhook_ingest_service import holds_personal_data
+
+    if not holds_personal_data(job.topic):
+        return
+    job.payload = None
+    if job.webhook_event_id and (event := db.get(WebhookEvent, job.webhook_event_id)) is not None:
+        event.payload = {}
+
+
+def _parse_time(value) -> datetime | None:
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
+
+
+def _utc(value: datetime | None) -> datetime | None:
+    return value if value is None or value.tzinfo else value.replace(tzinfo=UTC)
 
 
 def _shop_domain(db: Session, job: AsyncJob) -> str:
@@ -65,20 +95,30 @@ def _handle_app_uninstall(db: Session, job: AsyncJob) -> None:
     from app.services.shopify_session_service import ShopifySessionService
     from app.services.tenant_service import TenantService
 
+    from app.services.billing_reconcile_service import BillingReconcileService
+
     tenant = db.get(Tenant, job.tenant_id)
     if tenant is None:
         return
-    if tenant.installed_at and job.created_at and tenant.installed_at > job.created_at:
-        # Reinstalled after this webhook arrived: its sessions and tokens are new.
+    # When Shopify fired the uninstall (X-Shopify-Triggered-At), else when it arrived.
+    fired_at = _parse_time((job.payload or {}).get("triggered_at")) or _utc(job.created_at)
+    authenticated = [t for t in (_utc(tenant.installed_at), _utc(tenant.last_authenticated_at)) if t]
+    if fired_at and authenticated and max(authenticated) > fired_at:
+        # Reinstalled (or re-authenticated) after Shopify fired this uninstall: the
+        # sessions and tokens are new, so this webhook is stale.
         logger.info("job.app_uninstall.superseded_by_reinstall", {"jobId": str(job.id), "tenantId": str(tenant.id)})
         return
     shop = tenant.shop_domain
-    # Drop this tenant's other pending jobs so a dead tenant can't hold slots.
+    # Drop this tenant's other pending jobs so a dead tenant can't hold slots
+    # (GDPR jobs are kept: they must still be answered).
     AsyncJobService(db).purge_tenant_active_jobs(job.tenant_id)
     # Drops the Shopify and Conversions API tokens; an uninstalled tenant's
     # Relays are refused. Everything else waits for shop/redact.
     TenantService(db).sync_shopify_uninstall(shop)
     ShopifySessionService(db).delete_shop_sessions(shop)
+    # Shopify cancels the app subscription on uninstall: a reinstall starts with no
+    # plan and goes to Shopify's plan page (as BG Delivery resets it).
+    BillingReconcileService(db).reset_on_uninstall(shop)
 
 
 @job_handler(AsyncJobOperation.SHOP_REDACT)
@@ -136,6 +176,25 @@ def _handle_scopes_update(db: Session, job: AsyncJob) -> None:
         scopes=scopes,
         refresh_token=ctx.get("refresh_token") or stored.get("refresh_token"),
     )
+    if scopes:
+        ShopifySessionService(db).update_offline_scope(shop, scopes)
+        db.commit()
+
+
+@job_handler(AsyncJobOperation.SUBSCRIPTION_CHECK)
+def _handle_subscription_check(db: Session, job: AsyncJob) -> None:
+    """app_subscriptions/update: re-read this shop's plan from the Partner API now."""
+    from app.models import BillingReconcileSource, Tenant
+    from app.services.billing_reconcile_service import BillingReconcileService
+    from app.services.partner_billing_client import PartnerBillingClient
+
+    tenant = db.get(Tenant, job.tenant_id)
+    client = PartnerBillingClient()
+    if tenant is None or not tenant.shopify_shop_id or not client.configured:
+        logger.info("job.subscription_check.skipped", {"jobId": str(job.id)})
+        return
+    snapshot = client.fetch_active_subscription(f"gid://shopify/Shop/{tenant.shopify_shop_id}")
+    BillingReconcileService(db).reconcile(tenant.shop_domain, snapshot, BillingReconcileSource.SCHEDULED_WORKER)
 
 
 @job_handler(AsyncJobOperation.SHOP_INFO_FETCH)

@@ -109,6 +109,9 @@ class Tenant(Base):
     )
     installed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     uninstalled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # The latest OAuth or app open with a live Shopify session (/shopify/install,
+    # /shopify/session-sync): an app/uninstalled triggered before it is stale.
+    last_authenticated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     # UI language of the embedded admin app, chosen by the merchant.
     app_ui_locale: Mapped[str] = mapped_column(String(8), default="en", server_default="en", nullable=False)
@@ -222,6 +225,8 @@ class BillingReconcileSource(str, enum.Enum):
     APP_LOAD = "app_load"
     BILLING_PAGE = "billing_page"
     SCHEDULED_WORKER = "scheduled_worker"
+    # app/uninstalled: Shopify cancels the subscription, so the plan goes to "none".
+    UNINSTALL = "uninstall"
 
 
 class BillingSubscriptionEvent(Base):
@@ -276,6 +281,8 @@ class AsyncJobOperation(str, enum.Enum):
     ORDERS_CREATE = "orders_create"
     # markets/create|update|delete and install: re-fetch the shop's Markets.
     MARKETS_SYNC = "markets_sync"
+    # app_subscriptions/update: re-read the shop's plan from the Partner API.
+    SUBSCRIPTION_CHECK = "subscription_check"
     # Mirror the Pixel Mapping, Relay public key and endpoint to the storefront.
     PIXEL_MAPPING_PUBLISH = "pixel_mapping_publish"
     # Re-fetch the storefront hosts the Relay accepts as Origin.

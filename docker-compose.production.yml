@@ -20,3 +20,5 @@ services:
     restart: always
   ui:
     restart: always
+  redis:
+    restart: always

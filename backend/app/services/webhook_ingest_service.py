@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import hashlib
 import uuid
+from datetime import datetime
 from dataclasses import dataclass
 from typing import Any
 
@@ -37,7 +38,18 @@ TOPIC_TO_OPERATION: dict[str, AsyncJobOperation] = {
     "markets/create": AsyncJobOperation.MARKETS_SYNC,
     "markets/update": AsyncJobOperation.MARKETS_SYNC,
     "markets/delete": AsyncJobOperation.MARKETS_SYNC,
+    # A plan approved, changed or cancelled on Shopify: re-read it at once instead
+    # of waiting for the next app open or the daily check.
+    "app_subscriptions/update": AsyncJobOperation.SUBSCRIPTION_CHECK,
 }
+
+# Topics whose body is personal data (orders, customers): when no job will process
+# it (unknown shop, or a skipped job), the body isn't kept — spec §7.
+PERSONAL_DATA_TOPIC_PREFIXES = ("orders/", "customers/")
+
+
+def holds_personal_data(topic: str) -> bool:
+    return topic.startswith(PERSONAL_DATA_TOPIC_PREFIXES)
 
 # Operations the worker still runs for a tenant that isn't active (uninstalled
 # shops still get redacted). See job_processors.dispatch_job.
@@ -97,22 +109,24 @@ class WebhookIngestService:
         shopify_webhook_id: str | None = None,
         payload: dict[str, Any] | None = None,
         webhook_context: dict[str, Any] | None = None,
+        triggered_at: datetime | None = None,
     ) -> WebhookIngestResult:
         normalized = normalize_webhook_topic(topic)
         tenant = self.tenants.get_tenant_by_shop_domain(shop_domain)
+        operation = TOPIC_TO_OPERATION.get(normalized)
+        has_job = operation is not None and tenant is not None
 
         # Store first, always. Delivery-level dedup on the Shopify webhook id.
         webhook_event = self.webhooks.record_received(
             shopify_webhook_id=shopify_webhook_id or f"local-{uuid.uuid4()}",
             topic=normalized,
             tenant_id=tenant.id if tenant else None,
-            payload=payload or {},
+            payload=(payload or {}) if has_job or not holds_personal_data(normalized) else {},
         )
         if webhook_event is None:
             return WebhookIngestResult(status="duplicate", duplicate=True)
 
-        operation = TOPIC_TO_OPERATION.get(normalized)
-        if operation is None or tenant is None:
+        if not has_job:
             reason = "no handler for this topic" if operation is None else "no tenant for this shop"
             self.webhooks.mark_skipped(webhook_event, f"{reason}: {shop_domain}")
             self.db.commit()
@@ -122,6 +136,8 @@ class WebhookIngestService:
         job_payload: dict[str, Any] = dict(payload or {})
         if webhook_context:
             job_payload["webhook_context"] = webhook_context
+        if triggered_at:
+            job_payload["triggered_at"] = triggered_at.isoformat()
 
         job = self.jobs.enqueue(
             tenant_id=tenant.id,

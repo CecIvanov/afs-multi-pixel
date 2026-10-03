@@ -97,15 +97,15 @@ export async function ingestShopifyWebhook(params: {
   shop: string;
   topic: string;
   webhookId?: string | null;
+  triggeredAt?: string | null;
   payload?: Record<string, unknown>;
-  webhookContext?: Record<string, unknown>;
 }) {
   const body = {
     shop_domain: params.shop,
     topic: params.topic,
     shopify_webhook_id: params.webhookId ?? null,
+    triggered_at: params.triggeredAt ?? null,
     payload: params.payload ?? null,
-    webhook_context: params.webhookContext ?? null,
   };
   try {
     return await backendFetch<{

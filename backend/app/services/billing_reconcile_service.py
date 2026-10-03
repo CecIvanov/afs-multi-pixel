@@ -143,6 +143,28 @@ class BillingReconcileService:
         logger.info("billing.reconciled", {"shop": shop_domain, "action": action.value, "effective": effective_after})
         return ReconcileResult(action=action, effective_plan_handle=effective_after, pending_plan_handle=pending_after)
 
+    def reset_on_uninstall(self, shop_domain: str) -> None:
+        """Shopify cancels the app subscription on uninstall: the plan goes to
+        "none" at once, so a reinstall starts with no plan (and a redirect grace
+        from before the uninstall no longer applies)."""
+        tenant = TenantService(self.db).get_tenant_by_shop_domain(shop_domain)
+        if not tenant:
+            return
+        sub = self.billing.get_subscription(tenant.id)
+        before = self.billing.current_plan_handle(tenant.id)
+        tenant.subscription_active = False
+        if sub is not None and before != free_plan_handle():
+            self.billing.apply_plan_change(
+                tenant.id, free_plan_handle(), reset_usage=False, trial_ends_at=None, clear_pending=True
+            )
+            self.db.commit()
+            self._write_event(
+                tenant, ReconcileAction.CANCELLED_TO_FREE, before, free_plan_handle(), None,
+                BillingReconcileSource.UNINSTALL, PartnerSubscriptionSnapshot(has_active_contract=False),
+            )
+        self.db.commit()
+        logger.info("billing.reset_on_uninstall", {"shop": shop_domain, "from": before})
+
     @staticmethod
     def _is_paid_plan(handle: str | None) -> bool:
         return bool(handle) and handle != free_plan_handle() and plan_by_handle(handle) is not None

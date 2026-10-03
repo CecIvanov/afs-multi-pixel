@@ -9,10 +9,13 @@ fairness, priority, DB-level dedup, and crash recovery.
 
 from __future__ import annotations
 
+import os
 import signal
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, wait
+from contextlib import contextmanager
+from pathlib import Path
 
 from app.config import get_settings
 from app.db.session import SessionLocal
@@ -21,6 +24,17 @@ from app.services.async_job_service import AsyncJobService, default_worker_id
 
 configure_logging(component="job_pool")
 logger = get_logger().child({"component": "job_pool"})
+
+
+# The container healthcheck reads this file's age (docker-compose.yml, jobs).
+LIVENESS_FILE = Path(os.environ.get("JOB_POOL_LIVENESS_FILE", "/tmp/job_pool.alive"))
+
+
+def _touch_liveness() -> None:
+    try:
+        LIVENESS_FILE.touch()
+    except OSError:
+        pass
 
 
 class JobPoolRunner:
@@ -54,13 +68,41 @@ class JobPoolRunner:
                         return
                     continue
                 job_id = job.id
-                AsyncJobService(db).process_job(job_id)
+                with self._claim_heartbeat(job_id):
+                    AsyncJobService(db).process_job(job_id)
             except Exception as exc:  # noqa: BLE001 — a slot must never die
                 logger.error("job_pool.slot_failed", exc, {"slot": slot})
                 db.rollback()
                 self._shutdown.wait(timeout=1.0)
             finally:
                 db.close()
+
+    @contextmanager
+    def _claim_heartbeat(self, job_id):
+        """Keep a running job's claimed_at fresh so the stale reaper (which requeues
+        PROCESSING jobs older than job_stale_processing_seconds) never runs a long
+        job twice. Only a dead worker's jobs go stale."""
+        stop = threading.Event()
+        interval = max(self.stale_processing_seconds / 3, 1.0)
+
+        def beat() -> None:
+            while not stop.wait(timeout=interval):
+                db = SessionLocal()
+                try:
+                    AsyncJobService(db).touch_claim(job_id)
+                except Exception as exc:  # noqa: BLE001 — a missed beat is retried
+                    logger.warn("job_pool.heartbeat_failed", {"jobId": str(job_id), "detail": str(exc)[:200]})
+                    db.rollback()
+                finally:
+                    db.close()
+
+        thread = threading.Thread(target=beat, name=f"heartbeat-{job_id}", daemon=True)
+        thread.start()
+        try:
+            yield
+        finally:
+            stop.set()
+            thread.join(timeout=5)
 
     def _server_event_loop(self) -> None:
         """Send due Server Events to the Conversions API (spec §3.2 step 3). Drains
@@ -88,6 +130,7 @@ class JobPoolRunner:
             futures = [pool.submit(self._worker_loop, i) for i in range(self.pool_size)]
             futures.append(pool.submit(self._server_event_loop))
             while not self._shutdown.is_set():
+                _touch_liveness()
                 if time.monotonic() - last_reap >= self.reap_interval_seconds:
                     self._reap_stale_jobs()
                     last_reap = time.monotonic()

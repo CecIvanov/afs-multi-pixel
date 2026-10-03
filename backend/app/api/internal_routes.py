@@ -50,6 +50,16 @@ router = APIRouter(
 )
 
 
+def _mark_authenticated(db: Session, tenant) -> None:
+    """The app just authenticated with a live Shopify session: an app/uninstalled
+    triggered before now is stale (see job_processors._handle_app_uninstall)."""
+    from sqlalchemy import func
+
+    tenant.last_authenticated_at = func.now()
+    db.commit()
+    db.refresh(tenant)
+
+
 @router.post("/shopify/install", response_model=TenantOut)
 def shopify_install(payload: ShopifyInstallIn, db: Session = Depends(get_db)) -> TenantOut:
     try:
@@ -63,6 +73,7 @@ def shopify_install(payload: ShopifyInstallIn, db: Session = Depends(get_db)) ->
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    _mark_authenticated(db, tenant)
     return tenant_to_out(tenant, db)
 
 
@@ -79,6 +90,7 @@ def shopify_session_sync(payload: ShopifySessionSyncIn, db: Session = Depends(ge
         )
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    _mark_authenticated(db, tenant)
     return tenant_to_out(tenant, db)
 
 
@@ -92,6 +104,7 @@ def shopify_webhook_ingest(payload: WebhookIngestIn, db: Session = Depends(get_d
         shopify_webhook_id=payload.shopify_webhook_id,
         payload=payload.payload,
         webhook_context=payload.webhook_context,
+        triggered_at=payload.triggered_at,
     )
     return WebhookIngestOut(
         status=result.status,

@@ -42,6 +42,7 @@ function webhookRequest({ topic = "customers/redact", body = { orders_to_redact:
       "X-Shopify-Shop-Domain": "shop-a.myshopify.com",
       "X-Shopify-Webhook-Id": "wh-123",
       "X-Shopify-API-Version": "2026-10",
+      "X-Shopify-Triggered-At": "2026-10-03T12:08:29.346Z",
     },
   });
 }
@@ -98,6 +99,10 @@ test("every verified topic is just stored and answered 200 — no session, no to
     const { calls, ingest } = recordingIngest();
     const response = await receiveWebhook(webhookRequest({ topic, body: { id: 1 } }), { apiSecretKey: SECRET, ingest });
     assert.equal(response.status, 200, topic);
-    assert.deepEqual(calls, [{ shop: "shop-a.myshopify.com", topic, webhookId: "wh-123", payload: { id: 1 } }], topic);
+    assert.deepEqual(
+      calls,
+      [{ shop: "shop-a.myshopify.com", topic, webhookId: "wh-123", triggeredAt: "2026-10-03T12:08:29.346Z", payload: { id: 1 } }],
+      topic,
+    );
   }
 });
