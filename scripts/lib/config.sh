@@ -14,7 +14,7 @@
 # Exported:  APP_NAME APP_HANDLE APP_SLUG APP_PRIMARY_LOCALE APP_SUPPORT_EMAIL
 #            APP_IMAGE_PREFIX APP_SHARED_NETWORK APP_CELERY_KEY_PREFIX
 #            APP_TEST_DB_SENTINEL SHOPIFY_API_VERSION
-#            DB_NAME DB_USER   (derived from the env argument)
+#            DB_NAME DB_USER   (from .env.<env> when set there, else derived from the env argument)
 
 set -euo pipefail
 
@@ -85,4 +85,17 @@ load_app_config() {
     export DB_NAME="${db_name_prefix}_${env_name}"
     export DB_USER="${db_user_prefix}_${env_name}"
   fi
+
+  # .env.<env> may name them explicitly (UAT and production do); that wins.
+  local env_file; env_file="$(_config_repo_root)/.env.${env_name}"
+  local value
+  value="$(_config_env_value "${env_file}" DB_NAME)"; [[ -n "${value}" ]] && export DB_NAME="${value}"
+  value="$(_config_env_value "${env_file}" DB_USER)"; [[ -n "${value}" ]] && export DB_USER="${value}"
+  return 0
+}
+
+# _config_env_value <file> <KEY> — the last KEY=value in an env file, or nothing.
+_config_env_value() {
+  [[ -f "$1" ]] || return 0
+  grep -E "^$2=" "$1" 2>/dev/null | tail -1 | cut -d= -f2- || true
 }
